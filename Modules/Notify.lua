@@ -268,7 +268,7 @@ UI.AddPage("notifications", L.PAGE_NOTIFY, 91, function(content, page)
         { tip = L.NOTIFY_ANNOUNCE_SOUND_TIP, show = function() return Notify.Settings().announce end })
 
     what:Toggle(L.NOTIFY_UPDATE, get("update"), set("update"), { col = 2, tip = L.NOTIFY_UPDATE_TIP })
-    what:Toggle(L.NOTIFY_FAILVOTE, function() return ns.Database.Settings().community.failVote ~= false end,
+    what:Toggle(L.NOTIFY_FAILVOTE, function() return ns.Database.Settings().community.failVote == true end,
         function(v) ns.Database.Settings().community.failVote = v end, { tip = L.NOTIFY_FAILVOTE_TIP })
 
     -- what the congratulation clicks write (placeholders)

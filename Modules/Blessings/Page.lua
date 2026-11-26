@@ -31,6 +31,23 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         bar:Toggle(L.BLESS_RAID_ONLY, function() return o().raidOnly end, function(v) o().raidOnly = v; barUpdate() end)
         bar:Toggle(L.BLESS_SOLO, function() return o().solo end, function(v) o().solo = v; barUpdate() end, { tip = L.BLESS_SOLO_TIP })
         bar:Toggle(L.BLESS_LIVE, function() return o().live ~= false end, function(v) o().live = v; barUpdate() end, { tip = L.BLESS_LIVE_TIP })
+        local look = form:Section(L.BLESS_LOOK)
+        look:Toggle(L.BLESS_OPT_PLAYERS, function() return o().players ~= false end, function(v) o().players = v; barUpdate() end, { tip = L.BLESS_OPT_PLAYERS_TIP })
+        look:Segment(L.BLESS_OPT_SIDE, { { value = "left", text = L.BLESS_SIDE_LEFT }, { value = "right", text = L.BLESS_SIDE_RIGHT } },
+            function() return o().side or "left" end, function(v) o().side = v; barUpdate() end, { width = 160 })
+        look:Toggle(L.BLESS_OPT_TIMES, function() return o().times ~= false end, function(v) o().times = v; barUpdate() end, { tip = L.BLESS_OPT_TIMES_TIP })
+        look:Toggle(L.BLESS_OPT_COUNTS, function() return o().counts ~= false end, function(v) o().counts = v; barUpdate() end)
+        look:Slider(L.BLESS_OPT_SCALE, 0.6, 1.6, 0.05, function() return ns.BlessingsBar.Scale() end,
+            function(v) ns.BlessingsBar.SetScale(v) end, { fmt = function(v) return ("%d%%"):format(math.floor(v * 100 + 0.5)) end })
+        local selfB = form:Section(L.BLESS_SELF_SECTION)
+        local function choices(list) return function() return ns.BlessingsBar.SelfChoices(list) end end
+        selfB:Toggle(L.BLESS_SELF_AURA, function() return o().aura == true end, function(v) o().aura = v; barUpdate() end, { tip = L.BLESS_SELF_TIP })
+        selfB:Dropdown(L.BLESS_SELF_AURA_PICK, choices(ns.BlessingsBar.AURAS), function() return o().auraSpell or ns.BlessingsBar.SelfChoice("aura") end,
+            function(v) o().auraSpell = v; barUpdate() end, { show = function() return o().aura == true end })
+        selfB:Toggle(L.BLESS_SELF_SEAL, function() return o().seal == true end, function(v) o().seal = v; barUpdate() end, { tip = L.BLESS_SELF_TIP })
+        selfB:Dropdown(L.BLESS_SELF_SEAL_PICK, choices(ns.BlessingsBar.SEALS), function() return o().sealSpell or ns.BlessingsBar.SelfChoice("seal") end,
+            function(v) o().sealSpell = v; barUpdate() end, { show = function() return o().seal == true end })
+        selfB:Toggle(L.BLESS_SELF_FURY, function() return o().fury == true end, function(v) o().fury = v; barUpdate() end)
         local sync = form:Section(L.BLESS_SYNC)
         sync:Toggle(L.BLESS_FREE, function() return o().freeAssign end, function(v) o().freeAssign = v; B.Share(B.Me()) end, { tip = L.BLESS_FREE_TIP })
         -- PallyPower: guests without this addon (read) and sending to them (sync)
@@ -61,19 +78,31 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
     end
 
     -- toolbar
-    local suggest = UI.Button(content, L.BLESS_SUGGEST, 120, 26, function()
+    local suggest = UI.Button(content, L.BLESS_SMART, 130, 26, function()
         if B.Suggest() then ns.Print(L.BLESS_SUGGESTED) else ns.Print(L.BLESS_CANT_EDIT) end
-    end, "rotate-ccw")
+    end, "sparkles")
     suggest:SetPoint("TOPLEFT", 0, -62)
-    suggest.tip = { L.BLESS_SUGGEST_TIP }
-    local clear = UI.Button(content, L.BLESS_CLEAR_MINE, 120, 26, function() local me = B.Me(); if me then B.Clear(me) end end, "x")
-    clear:SetPoint("LEFT", suggest, "RIGHT", 8, 0)
+    suggest.tip = { L.BLESS_SMART_TIP }
+    local single = UI.Button(content, L.BLESS_SINGLE_ADD_BTN, 120, 26, function(self)
+        if not B.Me() then ns.Print(L.BLESS_SINGLE_NOT_PALADIN); return end
+        ns.BlessingsBar.AddSingle(self)
+    end, "users")
+    single:SetPoint("LEFT", suggest, "RIGHT", 8, 0)
+    single.tipTitle = L.BLESS_SINGLE_ADD_TITLE
+    single.tip = { L.BLESS_SINGLE_ADD_TIP }
+    local clear = UI.Button(content, L.BLESS_CLEAR_MINE, 110, 26, function() local me = B.Me(); if me then B.Clear(me) end end, "x")
+    clear:SetPoint("LEFT", single, "RIGHT", 8, 0)
+    local announce = UI.Button(content, L.BLESS_ANNOUNCE, 110, 26, function() B.Announce() end, "megaphone")
+    announce:SetPoint("TOPRIGHT", 0, -62)
+    local whisper = UI.Button(content, L.BLESS_WHISPER_BTN, 110, 26, function() B.WhisperAll() end, "message-circle")
+    whisper:SetPoint("RIGHT", announce, "LEFT", -8, 0)
+    local quick = UI.Button(content, L.BLESS_QUICK_SHORT, 110, 26, function() ns.BlessAssign.Toggle() end, "layout-grid")
+    quick:SetPoint("RIGHT", whisper, "LEFT", -8, 0)
+    quick.tipTitle, quick.tip = L.BLESS_QUICK, { L.BLESS_QUICK_TIP }
     local info = UI.Text(content, 11, "muted")
     info:SetPoint("LEFT", clear, "RIGHT", 12, 0)
-    local announce = UI.Button(content, L.BLESS_ANNOUNCE, 120, 26, function() B.Announce() end, "megaphone")
-    announce:SetPoint("TOPRIGHT", 0, -62)
-    local whisper = UI.Button(content, L.BLESS_WHISPER_BTN, 120, 26, function() B.WhisperAll() end, "message-circle")
-    whisper:SetPoint("RIGHT", announce, "LEFT", -8, 0)
+    info:SetPoint("RIGHT", quick, "LEFT", -12, 0)
+    info:SetWordWrap(false)
 
     local scroll, body = UI.ScrollArea(content)
     scroll:SetPoint("TOPLEFT", 0, -100)
@@ -87,6 +116,11 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
     local legend = UI.Text(body, 11, "muted")
     legend:SetWordWrap(true)
     legend:SetJustifyH("LEFT")
+    local singleHead = UI.Text(body, 10, "accent")
+    singleHead:SetText(L.BLESS_SINGLES_TITLE:upper())
+    local singleLine = UI.Divider(body)
+    local singleNote = UI.Text(body, 11, "muted")
+    local singleUI = {}
     local missHead = UI.Text(body, 10, "accent")
     missHead:SetText(L.BLESS_MISSING:upper())
     local missLine = UI.Divider(body)
@@ -128,8 +162,13 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
             local lines = {}
             local b = self.p.set and self.p.set[self.class]
             if b then
-                local st = B.status[self.class]
-                lines[#lines + 1] = L.BLESS_TIP_STATUS:format((st and st.have[b]) or 0, (st and st.total) or 0)
+                local have, total = B.Wanted(self.class, b)
+                lines[#lines + 1] = L.BLESS_TIP_STATUS:format(have, total)
+            end
+            for _, s in ipairs(B.Singles(self.p)) do
+                if s.member.class == self.class then
+                    lines[#lines + 1] = L.BLESS_TIP_INSTEAD:format(s.member.name, B.Name(s.blessing))
+                end
             end
             lines[#lines + 1] = " "
             lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
@@ -156,6 +195,70 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         r.sub:SetPoint("BOTTOMLEFT", r.icon, "BOTTOMRIGHT", 8, 1)
         r.cells = {}
         rowsUI[i] = r
+        return r
+    end
+
+    -- one single blessing: paladin, player (spec icon), blessing, state, set by hand / smart
+    local function singleRow(i)
+        local r = singleUI[i]
+        if r then return r end
+        r = CreateFrame("Button", nil, body)
+        r:SetHeight(24)
+        r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        r.bg = UI.Fill(r, (i % 2 == 0) and "rowAlt" or "row", "BACKGROUND"); r.bg:SetAllPoints()
+        r.hl = UI.Fill(r, "hover", "HIGHLIGHT"); r.hl:SetAllPoints()
+        r.pal = UI.Text(r, 12, "text")
+        r.pal:SetPoint("LEFT", 8, 0)
+        r.pal:SetWidth(NAME_W - 16)
+        r.pal:SetWordWrap(false)
+        r.spec = r:CreateTexture(nil, "ARTWORK")
+        r.spec:SetSize(18, 18)
+        r.spec:SetPoint("LEFT", NAME_W, 0)
+        r.who = UI.Text(r, 12, "text")
+        r.who:SetPoint("LEFT", r.spec, "RIGHT", 6, 0)
+        r.who:SetWidth(170)
+        r.who:SetWordWrap(false)
+        r.bless = UI.Text(r, 12, "text")
+        r.bless:SetPoint("LEFT", r.who, "RIGHT", 8, 0)
+        r.bless:SetWidth(150)
+        r.bless:SetWordWrap(false)
+        r.state = UI.Text(r, 12, "text")
+        r.state:SetPoint("LEFT", r.bless, "RIGHT", 8, 0)
+        r.state:SetWidth(80)
+        r.src = UI.Text(r, 11, "muted")
+        r.src:SetPoint("LEFT", r.state, "RIGHT", 8, 0)
+        r.src:SetPoint("RIGHT", -8, 0)
+        r.src:SetWordWrap(false)
+        r:SetScript("OnClick", function(self, button)
+            if not self.p then return end
+            if not B.CanEdit(self.p) then ns.Print(L.BLESS_CANT_EDIT); return end
+            if button == "RightButton" then B.SetSingle(self.p, self.key, nil)
+            else ns.BlessingsBar.SingleMenu(self, self.key, self.p) end
+        end)
+        r:EnableMouseWheel(true)
+        r:SetScript("OnMouseWheel", function(self, delta)
+            if not self.p then return end
+            if not B.CanEdit(self.p) then ns.Print(L.BLESS_CANT_EDIT); return end
+            B.CycleSingle(self.p, self.key, delta)
+            ns.Window.Refresh("blessings")
+        end)
+        r:SetScript("OnEnter", function(self)
+            if not self.p then return end
+            local m = B.members[self.key]
+            local lines = {}
+            if m then
+                local kind, source = B.UnitType(m.unit, m.key, m.class)
+                lines[#lines + 1] = L.BLESS_TIP_PLAYS:format(L["BLESS_TYPE_" .. kind:upper()] or kind, L["BLESS_SRC_" .. tostring(source):upper()] or "")
+                local classB = self.p.set and self.p.set[m.class]
+                if classB and classB ~= self.blessing then lines[#lines + 1] = L.BLESS_TIP_REPLACES:format(B.Name(classB)) end
+            end
+            lines[#lines + 1] = self.pinned and L.BLESS_TIP_PINNED or L.BLESS_TIP_SMART
+            lines[#lines + 1] = " "
+            lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
+            UI.Tooltip(self, (m and m.name or self.key) .. " · " .. (B.Name(self.blessing) or ""), lines)
+        end)
+        r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        singleUI[i] = r
         return r
     end
 
@@ -252,14 +355,17 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
                 local st = B.status[class]
                 if b then
                     cl.icon:SetTexture(B.Icon(b)); cl.icon:Show(); cl.dash:Hide()
-                    local have, total = (st and st.have[b]) or 0, (st and st.total) or 0
+                    local have, total = B.Wanted(class, b)
                     if total > 0 then
                         cl.count:SetText(Theme.HexColor(have >= total and "good" or "bad", ("%d/%d"):format(have, total)))
                     else
                         cl.count:SetText(Theme.HexColor("muted", "—"))
                     end
                     local left = st and st.left[b]
-                    cl.left:SetText(left and left ~= math.huge and ("%dm"):format(math.floor(left / 60)) or "")
+                    local extra = 0
+                    for _, sg in ipairs(B.Singles(p)) do if sg.member.class == class then extra = extra + 1 end end
+                    cl.left:SetText((left and left ~= math.huge and ("%dm"):format(math.floor(left / 60)) or "")
+                        .. (extra > 0 and Theme.HexColor("accent", "  +" .. extra) or ""))
                     cl.count:Show(); cl.left:Show()
                 else
                     cl.icon:Hide(); cl.count:Hide(); cl.left:Hide(); cl.dash:Show()
@@ -279,7 +385,53 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         legend:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -(y + 8))
         legend:SetWidth(W - 8)
         legend:SetText(table.concat(parts, "     ") .. Theme.HexColor("muted", "     " .. L.BLESS_LEGEND_HINT))
-        y = y + 34
+        y = y + 34 + math.max(0, math.ceil(((legend:GetStringHeight() or 14) - 16) / 14)) * 14
+
+        -- single blessings of every paladin (players in the group)
+        local all = {}
+        for _, p in ipairs(pals) do
+            for _, sg in ipairs(B.Singles(p)) do sg.p = p; all[#all + 1] = sg end
+        end
+        local showS = IsInGroup() or B.test
+        singleHead:SetShown(showS); singleLine:SetShown(showS); singleNote:SetShown(showS)
+        if showS then
+            local done = 0
+            for _, sg in ipairs(all) do if B.SingleState(sg.key, sg.blessing) then done = done + 1 end end
+            singleHead:ClearAllPoints()
+            singleHead:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -(y + 6))
+            singleHead:SetText(L.BLESS_SINGLES_TITLE:upper() .. (#all > 0 and ("   " .. Theme.HexColor(done >= #all and "good" or "bad", ("%d/%d"):format(done, #all))) or ""))
+            singleLine:ClearAllPoints()
+            singleLine:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -(y + 22))
+            singleLine:SetWidth(W)
+            y = y + 30
+            singleNote:ClearAllPoints()
+            singleNote:SetPoint("TOPLEFT", body, "TOPLEFT", 4, -y)
+            singleNote:SetWidth(W - 8)
+            singleNote:SetWordWrap(true)
+            singleNote:SetJustifyH("LEFT")
+            singleNote:SetText(#all == 0 and L.BLESS_SINGLES_EMPTY or L.BLESS_SINGLES_HINT)
+            y = y + 20
+        end
+        for i, sg in ipairs(showS and all or {}) do
+            local r = singleRow(i)
+            r.p, r.key, r.blessing, r.pinned = sg.p, sg.key, sg.blessing, sg.pinned
+            r:ClearAllPoints()
+            r:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
+            r:SetWidth(W)
+            r.pal:SetText(ns.Highlight(ns.ColorName(sg.p.name or sg.p.key, "PALADIN"), q))
+            local m = sg.member
+            if not ns.SetSpecIcon(r.spec, m.class, ns.SpecPoints(ns.Database.Member(m.key))) then ns.SetClassIcon(r.spec, m.class) end
+            r.who:SetText(ns.Highlight(ns.ColorName(m.name, m.class), q))
+            r.bless:SetText(("|T%s:16:16:0:0:64:64:5:59:5:59|t  %s"):format(B.Icon(sg.blessing), B.Name(sg.blessing)))
+            local has, left = B.SingleState(sg.key, sg.blessing)
+            r.state:SetText(has and Theme.HexColor("good", left and left ~= math.huge and ("%dm"):format(math.floor(left / 60)) or L.BLESS_SINGLE_HAS)
+                or Theme.HexColor("bad", L.BLESS_SINGLE_MISSING))
+            r.src:SetText(sg.pinned and L.BLESS_SRC_PINNED or L.BLESS_SRC_SMART)
+            r:Show()
+            y = y + 26
+        end
+        for i = (showS and #all or 0) + 1, #singleUI do singleUI[i]:Hide() end
+        if showS then y = y + 6 end
 
         -- missing players, four per line
         missHead:SetShown(#B.missing > 0)

@@ -13,7 +13,7 @@ local DEFAULTS = {
         modules = { feed = true, community = true, council = true, cooldowns = true, professions = true,
             stats = true, councilOnlyMembers = false },
         craft = { answer = true, prefix = "!lg" },
-        community = { failVote = true },
+        community = { failVote = false },
         lcAutoPass = true,
         enchantSlots = { [2] = true, [1] = true, [3] = true, [15] = true, [5] = true, [9] = true, [10] = true, [7] = true,
             [8] = true, [16] = true, [17] = true },
@@ -62,6 +62,8 @@ function Database.Init()
     if not st.lcPageStaffOn then st.lcPageStaffOn = true; st.modules.councilOnlyMembers = true end
     -- 1.0.84 (Ben): everyone sees the loot council page again – history and the shared setup read-only
     if not st.lcPageAllOn then st.lcPageAllOn = true; st.modules.councilOnlyMembers = false end
+    -- 1.0.84 (Ben): the fail-pull vote after a wipe is off by default (once for everyone)
+    if not st.failVoteOff then st.failVoteOff = true; st.community = st.community or {}; st.community.failVote = false end
     if not st.cd.clickMigrated then
         st.cd.clickMigrated = true
         if st.cd.clickWhisper == false then st.cd.clickLeft = "none" end

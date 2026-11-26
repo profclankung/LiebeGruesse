@@ -267,12 +267,15 @@ local function today() return date("%Y%m%d") end
 ---------------------------------------------------------------------------
 local vote          -- { id, boss, votes = { [voter] = target|"none" }, closes }
 local votePopup
+local voteIcon      -- small square: click opens the vote (Ben: the popup after a wipe was too much)
+local showVote
 
 local function tally()
     if not vote then return end
     local v = vote
     vote = nil
     if votePopup then votePopup:Hide() end
+    if voteIcon then voteIcon:Hide() end
     local counts, voters = {}, 0
     for _, target in pairs(v.votes) do
         voters = voters + 1
@@ -307,7 +310,42 @@ local function castVote(target)
     if votePopup then votePopup.done:SetText(L.FP_VOTED:format(target == "none" and L.FP_NOBODY or Names.Display(target))) end
 end
 
-local function showVote()
+-- the square: swords icon and the seconds left; click = vote, movable with "Move elements"
+local function showVoteIcon()
+    if not voteIcon then
+        voteIcon = CreateFrame("Button", "LiebeGruesseFailVoteIcon", UIParent, "BackdropTemplate")
+        voteIcon:SetSize(36, 36)
+        voteIcon:SetFrameStrata("MEDIUM")
+        voteIcon:SetClampedToScreen(true)
+        UI.Skin(voteIcon, "bg", "accent")
+        voteIcon.icon = UI.Icon(voteIcon, "swords", 18, "accent")
+        voteIcon.icon:SetPoint("CENTER", 0, 3)
+        voteIcon.time = UI.Text(voteIcon, 9, "muted", "CENTER")
+        voteIcon.time:SetPoint("BOTTOM", 0, 2)
+        voteIcon:SetScript("OnClick", function(self)
+            self:Hide()
+            if vote then showVote() end
+        end)
+        voteIcon:SetScript("OnEnter", function(self)
+            UI.Tooltip(self, vote and L.FP_TITLE:format(vote.boss or "?") or L.MOVER_FAILVOTE, { L.FP_ICON_TIP })
+        end)
+        voteIcon:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        -- seconds left, only while the square is shown (hidden = no updates)
+        voteIcon.elapsed = 0
+        voteIcon:SetScript("OnUpdate", function(self, dt)
+            self.elapsed = self.elapsed + dt
+            if self.elapsed < 0.5 then return end
+            self.elapsed = 0
+            if vote then self.time:SetText(math.max(0, math.floor(vote.closes - GetTime()))) else self:Hide() end
+        end)
+        ns.Movers.Attach("failVoteIcon", voteIcon)
+    end
+    voteIcon.time:SetText(vote and math.max(0, math.floor(vote.closes - GetTime())) or "")
+    voteIcon:Show()
+end
+Community.ShowVoteIcon = showVoteIcon
+
+showVote = function()
     if not votePopup then
         votePopup = UI.Panel(UIParent, "bg", "border")
         UI.Float(votePopup)
@@ -379,7 +417,8 @@ local function openVote(id, boss)
     if vote and vote.id == id then return end
     vote = { id = id, boss = boss, votes = {}, closes = GetTime() + 45 }
     C_Timer.After(45, function() if vote and vote.id == id then tally() end end)
-    if settings().failVote then showVote() end
+    -- off by default (Ben); when on, only a small square that opens the vote
+    if settings().failVote == true then showVoteIcon() end
 end
 
 function Community.Vote(target) castVote(target) end
@@ -395,7 +434,7 @@ function Community.TestVote()
     members[#members + 1] = { key = me, name = Names.Unit("player") or me, class = myClass }
     local id = "test:" .. GetTime()
     vote = { id = id, boss = L.TEST_BOSS, votes = {}, closes = GetTime() + 20, test = true, members = members }
-    showVote()
+    showVoteIcon()
     local suspect = members[math.random(1, #FAKE)].key
     for i = 1, #FAKE do
         C_Timer.After(1 + i * 0.6, function()
@@ -1128,4 +1167,6 @@ end
 ns.On("LG_READY", function()
     ns.Movers.Anchor("failVote", L.MOVER_FAILVOTE, { "TOP", "TOP", 0, -430 }, 580, 150, nil,
         { icon = "swords", scalable = true, settings = function() ns.Window.Show("community") end })
+    ns.Movers.Anchor("failVoteIcon", L.MOVER_FAILVOTE_ICON, { "TOP", "TOP", 160, -200 }, 36, 36, nil,
+        { icon = "swords", scalable = true, settings = function() ns.Window.Show("notifications") end })
 end)

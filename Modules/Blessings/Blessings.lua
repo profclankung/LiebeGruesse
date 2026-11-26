@@ -9,24 +9,84 @@ local B = ns.NewModule("blessings")
 ns.Blessings = B
 
 ---------------------------------------------------------------------------
--- Spells (WoW: Forever has Kings, Might and Wisdom; greater = whole class)
+-- Spells (greater = whole class, WoW: Forever has them too). No Salvation as a
+-- blessing on Forever (it stacks there). Blessings a paladin does not know are
+-- never offered (Kings and Sanctuary need talents); without the greater one the
+-- bar casts the normal one. Ranks are also found by name in the spell book, and
+-- blessing ids seen on players are learned (Forever can use other ids).
 ---------------------------------------------------------------------------
 B.LIST = {
     { key = "kings", single = { 20217 }, greater = { 25898 }, short = "K" },
     { key = "might", single = { 19740, 19834, 19835, 19836, 19837, 19838, 25291 }, greater = { 25782, 25916 }, short = "M" },
     { key = "wisdom", single = { 19742, 19850, 19852, 19853, 19854, 25290 }, greater = { 25894, 25918 }, short = "W" },
+    { key = "light", single = { 19977, 19978, 19979 }, greater = { 25890 }, short = "L" },
+    { key = "sanctuary", single = { 20911, 20912, 20913, 20914 }, greater = { 25899 }, short = "N" },
 }
 B.BY_KEY = {}
 for i, b in ipairs(B.LIST) do b.order = i; B.BY_KEY[b.key] = b end
 
 B.CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE", "WARLOCK", "DRUID" }
--- what each class wants, best first
-B.WISHES = {
-    WARRIOR = { "kings", "might" }, ROGUE = { "kings", "might" },
-    HUNTER = { "kings", "might", "wisdom" }, PALADIN = { "kings", "wisdom", "might" },
-    SHAMAN = { "kings", "wisdom", "might" }, DRUID = { "kings", "wisdom", "might" },
-    PRIEST = { "kings", "wisdom" }, MAGE = { "kings", "wisdom" }, WARLOCK = { "kings", "wisdom" },
+
+---------------------------------------------------------------------------
+-- Specs: what a player wants depends on what he plays (feral druid: Might,
+-- restoration druid: Wisdom; tanks Sanctuary)
+---------------------------------------------------------------------------
+-- kind of player per class and talent tree (feral = cat or bear, decided by the group role)
+local TREE_TYPES = {
+    WARRIOR = { "melee", "melee", "tank" }, PALADIN = { "healer", "tank", "melee" },
+    HUNTER = { "ranged", "ranged", "ranged" }, ROGUE = { "melee", "melee", "melee" },
+    PRIEST = { "healer", "healer", "caster" }, SHAMAN = { "caster", "melee", "healer" },
+    MAGE = { "caster", "caster", "caster" }, WARLOCK = { "caster", "caster", "caster" },
+    DRUID = { "caster", "feral", "healer" },
 }
+-- without talents or role: what most of the class plays in a raid
+local CLASS_TYPE = { WARRIOR = "melee", PALADIN = "healer", HUNTER = "ranged", ROGUE = "melee", PRIEST = "healer",
+    SHAMAN = "healer", MAGE = "caster", WARLOCK = "caster", DRUID = "healer" }
+local TANKS = { WARRIOR = true, PALADIN = true, DRUID = true }
+local HEALERS = { PRIEST = true, PALADIN = true, SHAMAN = true, DRUID = true }
+local DAMAGE = { WARRIOR = "melee", PALADIN = "melee", HUNTER = "ranged", ROGUE = "melee", PRIEST = "caster", MAGE = "caster", WARLOCK = "caster" }
+-- best first
+local TYPE_WISHES = {
+    tank = { "kings", "might", "sanctuary", "light" },
+    melee = { "kings", "might", "light" },
+    ranged = { "kings", "might", "wisdom", "light" },
+    caster = { "kings", "wisdom", "light" },
+    healer = { "kings", "wisdom", "light" },
+}
+B.TYPES = { "tank", "melee", "ranged", "caster", "healer" }
+B.CLASS_TYPE = CLASS_TYPE
+
+-- wish list of a kind of player
+function B.Wishes(kind, class)
+    local out = {}
+    for _, b in ipairs(TYPE_WISHES[kind] or TYPE_WISHES.melee) do out[#out + 1] = b end
+    -- paladins and shamans fight in melee but need mana
+    if (kind == "melee" or kind == "tank") and (class == "PALADIN" or class == "SHAMAN") then
+        table.insert(out, kind == "tank" and 2 or 3, "wisdom")
+    end
+    return out
+end
+
+B.testTypes = {}
+-- what a group member plays: tank role, talents (own profile or inspect), group role, class
+function B.UnitType(unit, key, class)
+    if B.test then return B.testTypes[unit] or CLASS_TYPE[class] or "melee", "test" end
+    local role = UnitGroupRolesAssigned and ns.Call(UnitGroupRolesAssigned, unit)
+    if role == "TANK" and TANKS[class] then return "tank", "role" end
+    local m = key and ns.Database.Member(key)
+    local tree = m and ns.SpecTree(ns.SpecPoints(m))
+    if not tree and m then
+        -- only a spec name (data without points): find its tree
+        local name = ns.SpecName(m.sp or (m.insp and m.insp.sp), class)
+        for i, t in ipairs(ns.TreeNames(class)) do if name and t == name then tree = i end end
+    end
+    local kind = tree and TREE_TYPES[class] and TREE_TYPES[class][tree]
+    if kind == "feral" then kind = "melee" end
+    if kind then return kind, "talents" end
+    if role == "HEALER" and HEALERS[class] then return "healer", "role" end
+    if role == "DAMAGER" and DAMAGE[class] then return DAMAGE[class], "role" end
+    return CLASS_TYPE[class] or "melee", "class"
+end
 
 local spellOf = {}    -- [spellId] = blessing key
 local nameOf = {}     -- [localized aura name] = blessing key
@@ -49,12 +109,57 @@ local function known(id)
     if IsSpellKnown then return ns.Call(IsSpellKnown, id) == true end
     return false
 end
--- highest known rank of a blessing ("single"/"greater"), as a spell id
+B.Known = known
+-- any rank of this spell in the spell book, found by its name (ids may differ on Forever)
+local function knownByName(id)
+    local name = B.SpellName and B.SpellName(id)
+    if type(name) ~= "string" or name == "" then return false end
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = ns.Call(C_Spell.GetSpellInfo, name)
+        if type(info) == "table" and info.spellID then return true end
+    end
+    if C_SpellBook and C_SpellBook.FindSpellBookSlotForSpell then
+        if ns.Call(C_SpellBook.FindSpellBookSlotForSpell, name) then return true end
+    end
+    return false
+end
+B.KnownByName = knownByName
+-- highest known rank of a blessing ("single"/"greater"), as a spell id; casting
+-- goes by name, so the game takes the highest rank you really have
 function B.SpellFor(key, kind)
     local b = B.BY_KEY[key]
     local ids = b and b[kind] or {}
     for i = #ids, 1, -1 do if known(ids[i]) then return ids[i] end end
+    if ids[1] and knownByName(ids[1]) then return ids[1] end
 end
+
+-- a blessing aura with an id this addon did not know (WoW: Forever): learn it,
+-- so counting, own casts and the live strip know it too (saved per account)
+function B.Learn(id, key, name, quiet)
+    local b = B.BY_KEY[key]
+    if type(id) ~= "number" or not b or spellOf[id] then return false end
+    local gname = B.SpellName(b.greater[1])
+    local kind = (name and gname and name == gname) and "greater" or "single"
+    table.insert(b[kind], id)
+    spellOf[id] = key
+    if not quiet then
+        local o = B.Settings()
+        o.learned = o.learned or {}
+        o.learned[id] = key .. ":" .. kind
+        if ns.BlessNative and ns.BlessNative.ResetFilters then ns.BlessNative.ResetFilters() end
+    end
+    return true
+end
+ns.On("LG_READY", function()
+    for id, v in pairs(B.Settings().learned or {}) do
+        local key = type(v) == "string" and v:match("^(%a+)")
+        local b = key and B.BY_KEY[key]
+        local kind = v:match(":(%a+)$")
+        if b and not spellOf[tonumber(id)] and (kind == "single" or kind == "greater") then
+            table.insert(b[kind], tonumber(id)); spellOf[tonumber(id)] = key
+        end
+    end
+end)
 function B.SpellName(id)
     local get = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
     return id and get and ns.Call(get, id) or nil
@@ -88,7 +193,8 @@ function B.Settings()
     local s = ns.Database.Settings()
     s.blessings = s.blessings or {}
     local o = s.blessings
-    local d = { bar = true, raidOnly = false, solo = true, scale = 1, freeAssign = false, ppRead = true, ppSync = true, live = true }
+    local d = { bar = true, raidOnly = false, solo = true, scale = 1, freeAssign = false, ppRead = true, ppSync = true, live = true,
+        players = true, times = true, counts = true, side = "left", aura = true, seal = false, fury = false }
     for k, v in pairs(d) do if o[k] == nil then o[k] = v end end
     return o
 end
@@ -99,11 +205,29 @@ local function isPaladin() local _, c = ns.Call(UnitClass, "player"); return c =
 B.IsPaladin = isPaladin
 
 -- saved own choices survive /reload; assignments for others only live per group
+-- drops blessings this addon does not know (any more): Salvation from 1.0.84 test builds
+local function clean(t)
+    for k, b in pairs(t) do if not B.BY_KEY[b] then t[k] = nil end end
+    return t
+end
 local function ownSet()
     local char = ns.Database.Char()
-    char.blessings = char.blessings or {}
+    char.blessings = clean(char.blessings or {})
     return char.blessings
 end
+-- own single blessings: [player key] = blessing; pinned = set by hand (smart assign keeps them)
+local function ownSingles()
+    local char = ns.Database.Char()
+    char.blessSingle = clean(char.blessSingle or {})
+    char.blessPinned = char.blessPinned or {}
+    return char.blessSingle, char.blessPinned
+end
+
+-- the blessing a paladin gives this player: his single one, else the class blessing
+local function gives(p, key, class)
+    return (key and p.single and p.single[key]) or (p.set and p.set[class]) or nil
+end
+B.Gives = gives
 
 local function encode(set)
     local chars = {}
@@ -113,7 +237,31 @@ local function encode(set)
     end
     return table.concat(chars)
 end
-local BY_SHORT = { K = "kings", M = "might", W = "wisdom" }
+local BY_SHORT = {}
+for _, b in ipairs(B.LIST) do BY_SHORT[b.short] = b.key end
+-- singles for the sync: { [player key] = "L" or "L!" (! = set by hand) }
+local function encodeSingles(p)
+    local out = {}
+    for key, b in pairs(p.single or {}) do
+        local s = B.BY_KEY[b] and B.BY_KEY[b].short
+        if s then out[key] = s .. ((p.pinned and p.pinned[key]) and "!" or "") end
+    end
+    return out
+end
+local function decodeSingles(t)
+    local single, pinned = {}, {}
+    if type(t) ~= "table" then return nil end
+    local n = 0
+    for key, v in pairs(t) do
+        if type(key) == "string" and type(v) == "string" and n < 60 then
+            local b = BY_SHORT[v:sub(1, 1)]
+            local k = Names.Key(key)
+            if b and k then single[k] = b; pinned[k] = v:sub(2, 2) == "!" or nil; n = n + 1 end
+        end
+    end
+    return single, pinned
+end
+B.EncodeSingles, B.DecodeSingles = encodeSingles, decodeSingles
 local function decode(text)
     local set = {}
     if type(text) ~= "string" then return set end
@@ -137,10 +285,26 @@ end
 local classUnits = {}   -- [class] = { unit, ... }
 local lastGood = {}     -- last good aura reading per unit: [unit] = { guid, [blessing] = expires (GetTime) }
 B.classUnits = classUnits
+B.members = {}   -- [player key] = { key, name, unit, class }
+B.unitKey = {}   -- [unit] = player key
+B.unitHas = {}   -- [player key] = { has = { [blessing] = seconds left }, estimated }
+
+local function addMember(unit, key, name, class)
+    B.members[key] = { key = key, name = name, unit = unit, class = class }
+    B.unitKey[unit] = key
+end
+
+local function mine(p)
+    p.addon, p.me = "lg", true
+    p.can = B.OwnSkills()
+    p.set = ownSet()
+    p.single, p.pinned = ownSingles()
+end
 
 function B.Rebuild()
     if B.test then return end
     wipe(classUnits)   -- (lastGood stays: it checks the GUID behind each unit)
+    wipe(B.members); wipe(B.unitKey)
     local seen = {}
     local me = Names.Me()
     for unit, key, name in ns.GroupUnits() do
@@ -148,23 +312,21 @@ function B.Rebuild()
         if class then
             classUnits[class] = classUnits[class] or {}
             table.insert(classUnits[class], unit)
+            addMember(unit, key, name, class)
             if class == "PALADIN" then
                 seen[key] = true
                 local p = B.paladins[key] or { key = key, set = {}, can = {} }
                 p.name, p.unit = name, unit
-                if Names.Same(key, me) then
-                    p.addon, p.me = "lg", true
-                    p.can = B.OwnSkills()
-                    p.set = ownSet()
-                end
+                if Names.Same(key, me) then mine(p) end
                 B.paladins[key] = p
             end
         end
     end
     -- solo paladin: show yourself too
     if not IsInGroup() and isPaladin() then
-        local p = B.paladins[me] or { key = me, set = ownSet() }
-        p.name, p.unit, p.addon, p.me, p.can, p.set = Names.Unit("player"), "player", "lg", true, B.OwnSkills(), ownSet()
+        local p = B.paladins[me] or { key = me }
+        mine(p)
+        p.name, p.unit = Names.Unit("player"), "player"
         B.paladins[me] = p
         seen[me] = true
         local _, class = ns.Call(UnitClass, "player")
@@ -228,6 +390,7 @@ local function unitBlessings(unit, out)
             reliable = false
         else
             local key = auraBlessing(spellId, name)
+            if key and type(spellId) == "number" and not spellOf[spellId] then B.Learn(spellId, key, name) end
             if key then out[key] = (type(expires) == "number" and expires > 0) and (expires - GetTime()) or 3600 end
         end
     end
@@ -363,41 +526,72 @@ function B.Scan()
     learnNames()
     wipe(B.status)
     wipe(B.missing)
-    local wanted = {}   -- [class] = { blessing = true } from all assignments
-    for _, p in pairs(B.paladins) do
-        for class, b in pairs(p.set or {}) do
-            wanted[class] = wanted[class] or {}
-            wanted[class][b] = true
-        end
-    end
+    wipe(B.unitHas)
     for class, units in pairs(classUnits) do
-        local st = { total = 0, have = {}, left = {}, need = {} }
+        -- want/units: who should have a blessing (a single from that paladin replaces his class blessing)
+        local st = { total = 0, have = {}, left = {}, need = {}, want = {}, units = {} }
         for _, unit in ipairs(units) do
             if ns.Call(UnitExists, unit) then
                 st.total = st.total + 1
+                local key = B.unitKey[unit]
                 local has, reliable = unitBlessings(unit, scratch)
                 if reliable then remember(unit, has) else has = rememberedBlessings(unit, scratch); st.estimated = true end
-                local miss = {}
-                for b in pairs(wanted[class] or {}) do
-                    if has[b] then
-                        st.have[b] = (st.have[b] or 0) + 1
-                        st.left[b] = math.min(st.left[b] or math.huge, has[b])
-                    else
-                        miss[#miss + 1] = b
-                        st.need[b] = st.need[b] or {}
-                        table.insert(st.need[b], unit)
-                    end
-                end
-                if #miss > 0 then
-                    local name = Names.Unit(unit)
-                    B.missing[#B.missing + 1] = { key = Names.Key(name), name = name, class = class, list = miss, unit = unit }
-                end
+                local copy = {}
+                for b, left in pairs(has) do copy[b] = left end
+                if key then B.unitHas[key] = { has = copy, estimated = not reliable } end
+                B.CountUnit(st, unit, key, class, copy)
             end
         end
         B.status[class] = st
     end
     table.sort(B.missing, function(a, b) return a.key < b.key end)
     ns.Fire("LG_BLESSINGS")
+end
+
+-- adds one player to the class status and the missing list
+function B.CountUnit(st, unit, key, class, has)
+    local wantU = {}
+    for _, p in pairs(B.paladins) do
+        local b = gives(p, key, class)
+        if b then wantU[b] = true end
+    end
+    local miss = {}
+    for _, info in ipairs(B.LIST) do
+        local b = info.key
+        if wantU[b] then
+            st.want[b] = (st.want[b] or 0) + 1
+            st.units[b] = st.units[b] or {}
+            table.insert(st.units[b], unit)
+            if has[b] then
+                st.have[b] = (st.have[b] or 0) + 1
+                st.left[b] = math.min(st.left[b] or math.huge, has[b])
+            else
+                miss[#miss + 1] = b
+                st.need[b] = st.need[b] or {}
+                table.insert(st.need[b], unit)
+            end
+        end
+    end
+    if #miss > 0 then
+        local m = key and B.members[key]
+        local name = (m and m.name) or Names.Unit(unit) or unit
+        B.missing[#B.missing + 1] = { key = key or Names.Key(name), name = name, class = class, list = miss, unit = unit }
+    end
+end
+
+-- players who should get blessing b in this class (count for a bar row / grid cell)
+function B.Wanted(class, b)
+    local st = B.status[class]
+    if not st then return 0, 0 end
+    return st.have[b] or 0, st.want[b] or 0
+end
+
+-- state of a single blessing: has (bool), seconds left, estimated, unit
+function B.SingleState(key, b)
+    local m = B.members[key]
+    local u = B.unitHas[key]
+    local left = u and u.has[b]
+    return left ~= nil, left, u and u.estimated, m and m.unit
 end
 
 -- counts for the page header
@@ -428,6 +622,15 @@ local function changed(p, quiet)
             wipe(saved)
             for class, b in pairs(p.set or {}) do saved[class] = b end
         end
+        local single, pinned = ownSingles()
+        if single ~= p.single then
+            wipe(single)
+            for k, b in pairs(p.single or {}) do single[k] = b end
+        end
+        if pinned ~= p.pinned then
+            wipe(pinned)
+            for k, v in pairs(p.pinned or {}) do pinned[k] = v end
+        end
     end
     if not quiet then B.Share(p) end
     ns.Debounce("bless-scan", 0.3, B.Scan)
@@ -442,13 +645,20 @@ function B.Set(p, class, blessing)
     return true
 end
 
+-- blessings this paladin can cast (unknown skills: everything)
+local function canCast(p, b)
+    local can = p.can and p.can[b]
+    return can == nil or can > 0 or not p.addon
+end
+B.CanCast = canCast
+
 -- Mouse wheel: next/previous blessing the paladin knows (then "none").
 -- Assignments change at once; the sync is sent once the wheel rests.
 function B.Cycle(p, class, delta, keep)
     if not B.CanEdit(p) then return false end
     local options = {}
     for _, b in ipairs(B.LIST) do
-        if not (p.addon and p.can and p.can[b.key] == 0) then options[#options + 1] = b.key end
+        if canCast(p, b.key) then options[#options + 1] = b.key end
     end
     if not keep then options[#options + 1] = false end   -- the bar keeps its row
     if #options == 0 then return false end
@@ -463,53 +673,222 @@ function B.Cycle(p, class, delta, keep)
     return true
 end
 
-function B.Clear(p)
-    if not B.CanEdit(p) then return false end
-    p.set = {}
+-- Single blessing for one player (replaces this paladin's class blessing on him).
+-- Set by hand = pinned: smart assign keeps it. blessing nil removes it.
+function B.SetSingle(p, key, blessing, auto)
+    if not B.CanEdit(p) or type(key) ~= "string" then return false end
+    p.single = p.single or {}
+    p.pinned = p.pinned or {}
+    p.single[key] = blessing or nil
+    p.pinned[key] = (blessing and not auto) and true or nil
     changed(p)
     return true
 end
 
--- Suggestion: one paladin per blessing, every class gets its wishes in order;
--- a paladin only gets blessings he knows (Kings needs the talent).
+-- mouse wheel on a single: next/previous blessing (set by hand)
+function B.CycleSingle(p, key, delta)
+    if not B.CanEdit(p) or type(key) ~= "string" then return false end
+    local options = {}
+    for _, b in ipairs(B.LIST) do if canCast(p, b.key) then options[#options + 1] = b.key end end
+    if #options == 0 then return false end
+    p.single = p.single or {}
+    p.pinned = p.pinned or {}
+    local pos = 0
+    for i, v in ipairs(options) do if v == p.single[key] then pos = i end end
+    pos = ((pos - 1 + (delta < 0 and 1 or -1)) % #options) + 1
+    p.single[key], p.pinned[key] = options[pos], true
+    changed(p, true)
+    ns.Debounce("bless-wheel-share", 1, function() B.Share(p) end)
+    return true
+end
+
+-- singles of a paladin for players in the group, sorted by class and name
+function B.Singles(p)
+    local out = {}
+    for key, b in pairs(p and p.single or {}) do
+        local m = B.members[key]
+        if m then out[#out + 1] = { key = key, blessing = b, member = m, pinned = p.pinned and p.pinned[key] or false } end
+    end
+    local order = {}
+    for i, c in ipairs(B.CLASSES) do order[c] = i end
+    table.sort(out, function(a, b)
+        local ca, cb = order[a.member.class] or 99, order[b.member.class] or 99
+        if ca ~= cb then return ca < cb end
+        return a.key < b.key
+    end)
+    return out
+end
+
+function B.Clear(p)
+    if not B.CanEdit(p) then return false end
+    p.set, p.single, p.pinned = {}, {}, {}
+    changed(p)
+    return true
+end
+
+---------------------------------------------------------------------------
+-- Smart assign: class blessings from what the players of each class play,
+-- then single blessings for players who want something else than their
+-- class gets (feral druid among restoration druids, a tank among holy
+-- paladins). Singles set by hand stay; paladins you may not change keep
+-- their blessings and count as given.
+---------------------------------------------------------------------------
+local function weights(members)
+    local w = {}
+    for _, m in ipairs(members) do
+        local n = #m.wishes
+        for i, b in ipairs(m.wishes) do w[b] = (w[b] or 0) + (n - i + 1) end
+    end
+    return w
+end
+local function ordered(w)
+    local list = {}
+    for b, v in pairs(w) do if v > 0 then list[#list + 1] = b end end
+    table.sort(list, function(a, b)
+        if w[a] ~= w[b] then return w[a] > w[b] end
+        return B.BY_KEY[a].order < B.BY_KEY[b].order
+    end)
+    return list
+end
+
+-- group members by class with what they play: { [class] = { { key, unit, kind, wishes } } }
+function B.GroupWishes()
+    local members, classes = {}, {}
+    if IsInGroup() or B.test then
+        for _, class in ipairs(B.CLASSES) do
+            local units = classUnits[class]
+            if units and #units > 0 then
+                classes[#classes + 1] = class
+                members[class] = {}
+                for _, unit in ipairs(units) do
+                    local key = B.unitKey[unit]
+                    local kind, source = B.UnitType(unit, key, class)
+                    table.insert(members[class], { key = key, unit = unit, kind = kind, source = source, wishes = B.Wishes(kind, class) })
+                end
+            end
+        end
+    else
+        -- solo there is nobody to count: plan every class for later
+        for _, class in ipairs(B.CLASSES) do
+            classes[#classes + 1] = class
+            members[class] = { { kind = CLASS_TYPE[class], wishes = B.Wishes(CLASS_TYPE[class], class) } }
+        end
+    end
+    return members, classes
+end
+
 -- onlyMe: change only your own assignments (first start of the bar).
 function B.Suggest(onlyMe)
     local list = {}
     for _, p in ipairs(B.PaladinList()) do if B.CanEdit(p) or not IsInGroup() then list[#list + 1] = p end end
     if #list == 0 then return false end
     local all = B.PaladinList()
-    -- paladins with Kings first, so the Kings paladin is the same for every class
-    table.sort(all, function(a, b)
-        local ka, kb = (a.can and a.can.kings or 0) > 0, (b.can and b.can.kings or 0) > 0
-        if ka ~= kb then return ka end
-        return a.key < b.key
-    end)
-    local new = {}
-    for _, p in ipairs(all) do new[p.key] = {} end
-    -- solo there is nobody to count: plan every class for later
-    local classes = {}
-    if IsInGroup() or B.test then
-        for class in pairs(classUnits) do classes[#classes + 1] = class end
-    else
-        for _, class in ipairs(B.CLASSES) do classes[#classes + 1] = class end
+    local members, classes = B.GroupWishes()
+    local function editable(p) return B.CanEdit(p) and (not onlyMe or p.me) end
+
+    local new, edit, fixedMain = {}, {}, {}
+    for _, p in ipairs(all) do
+        if editable(p) then
+            new[p.key] = {}
+            edit[#edit + 1] = p
+        else
+            -- kept as it is; his most given blessing needs no other paladin
+            local copy, count = {}, {}
+            for class, b in pairs(p.set or {}) do copy[class] = b; count[b] = (count[b] or 0) + 1 end
+            new[p.key] = copy
+            local best
+            for b, n in pairs(count) do if not best or n > count[best] then best = b end end
+            if best then fixedMain[best] = true end
+        end
+    end
+    -- the main blessing of each paladin: the most wanted blessing goes to the
+    -- paladin with the fewest alternatives (Kings stays with whoever has the talent)
+    local function options(p)
+        local n = 0
+        for _, b in ipairs(B.LIST) do if canCast(p, b.key) then n = n + 1 end end
+        return n
+    end
+    local global = {}
+    for _, class in ipairs(classes) do
+        for b, v in pairs(weights(members[class])) do global[b] = (global[b] or 0) + v end
+    end
+    local primary = {}
+    for _, b in ipairs(ordered(global)) do
+        if not fixedMain[b] then
+            local best
+            for _, p in ipairs(edit) do
+                if not primary[p.key] and canCast(p, b) and (not best or options(p) < options(best)) then best = p end
+            end
+            if best then primary[best.key] = b end
+        end
+    end
+    -- per class: main blessings where the class wants them, then the best free wish
+    for _, class in ipairs(classes) do
+        local order = ordered(weights(members[class]))
+        local wanted, taken = {}, {}
+        for _, b in ipairs(order) do wanted[b] = true end
+        for _, p in ipairs(all) do
+            if not editable(p) and new[p.key][class] then taken[new[p.key][class]] = true end
+        end
+        for _, p in ipairs(edit) do
+            local b = primary[p.key]
+            if b and wanted[b] and not taken[b] then new[p.key][class] = b; taken[b] = true end
+        end
+        for _, p in ipairs(edit) do
+            if not new[p.key][class] then
+                for _, b in ipairs(order) do
+                    if not taken[b] and canCast(p, b) then new[p.key][class] = b; taken[b] = true; break end
+                end
+            end
+        end
+    end
+    -- singles: pinned ones stay (and those of paladins we may not change)
+    local singles = {}
+    for _, p in ipairs(all) do
+        local s = {}
+        for key, b in pairs(p.single or {}) do
+            if not editable(p) or (p.pinned and p.pinned[key]) then s[key] = b end
+        end
+        singles[p.key] = s
     end
     for _, class in ipairs(classes) do
-        local wishes = B.WISHES[class] or {}
-        local taken = {}
-        for _, p in ipairs(all) do
-            for _, b in ipairs(wishes) do
-                local can = p.can and p.can[b]
-                if not taken[b] and (can == nil or can > 0 or not p.addon) then
-                    new[p.key][class] = b
-                    taken[b] = true
-                    break
+        for _, m in ipairs(members[class]) do
+            if m.key then
+                local wish = {}
+                for i, b in ipairs(m.wishes) do wish[b] = i end
+                -- fixed first: what he surely gets
+                local covered, redo = {}, {}
+                local function look(p, fixed)
+                    local b = singles[p.key][m.key] or new[p.key][class]
+                    if not b then return end
+                    if wish[b] and not covered[b] then covered[b] = true
+                    elseif not fixed then redo[#redo + 1] = p end
+                end
+                for _, p in ipairs(all) do
+                    if not editable(p) or (p.pinned and p.pinned[m.key]) then look(p, true) end
+                end
+                for _, p in ipairs(edit) do
+                    if not (p.pinned and p.pinned[m.key]) then look(p, false) end
+                end
+                -- an unwanted or doubled blessing becomes the best wish still open
+                for _, p in ipairs(redo) do
+                    for _, b in ipairs(m.wishes) do
+                        if not covered[b] and canCast(p, b) then
+                            if b ~= new[p.key][class] then singles[p.key][m.key] = b end
+                            covered[b] = true
+                            break
+                        end
+                    end
                 end
             end
         end
     end
     for _, p in ipairs(all) do
-        if B.CanEdit(p) and (not onlyMe or p.me) then
+        if editable(p) then
             p.set = new[p.key]
+            local pinned = {}
+            for key in pairs(p.pinned or {}) do if singles[p.key][key] then pinned[key] = true end end
+            p.single, p.pinned = singles[p.key], pinned
             changed(p)
         end
     end
@@ -536,15 +915,32 @@ local function describe(set)
     return #parts > 0 and table.concat(parts, " · ") or nil
 end
 B.Describe = describe
+-- singles of a paladin as one line ("Single: Light → Dyaxler, Might → Borin"), nil without
+local function describeSingles(p)
+    local parts = {}
+    for _, s in ipairs(B.Singles(p)) do
+        parts[#parts + 1] = ("%s → %s"):format(B.Name(s.blessing), Names.Display(s.member.name))
+    end
+    if #parts == 0 then return nil end
+    local text = L.BLESS_SINGLE_LINE:format(table.concat(parts, ", "))
+    return #text > 240 and (text:sub(1, 237) .. "...") or text
+end
+B.DescribeSingles = describeSingles
 
 function B.WhisperAll()
     local n = 0
     for _, p in ipairs(B.PaladinList()) do
-        local text = describe(p.set)
-        if text and not p.me then
-            local msg = ns.Messages.Format("blessWhisper", { blessings = text, player = Names.Display(p.name) })
-            if B.test then ns.Print(L.TEST_TAG .. " " .. p.name .. ": " .. msg)
-            else ns.SendChat(msg, "WHISPER", p.name) end
+        local text, single = describe(p.set), describeSingles(p)
+        if (text or single) and not p.me then
+            local msg = ns.Messages.Format("blessWhisper", { blessings = text or single, player = Names.Display(p.name) })
+            local extra = text and single or nil
+            if B.test then
+                ns.Print(L.TEST_TAG .. " " .. p.name .. ": " .. msg)
+                if extra then ns.Print(L.TEST_TAG .. " " .. p.name .. ": " .. extra) end
+            else
+                ns.SendChat(msg, "WHISPER", p.name)
+                if extra then ns.SendChat(extra, "WHISPER", p.name) end
+            end
             n = n + 1
         end
     end
@@ -557,6 +953,8 @@ function B.Announce()
         for _, p in ipairs(B.PaladinList()) do
             local text = describe(p.set)
             if text then ns.Print(L.TEST_TAG .. " " .. ("%s – %s"):format(Names.Display(p.name), text)) end
+            local single = describeSingles(p)
+            if single then ns.Print(L.TEST_TAG .. " " .. ("%s – %s"):format(Names.Display(p.name), single)) end
         end
         return
     end
@@ -566,6 +964,8 @@ function B.Announce()
     for _, p in ipairs(B.PaladinList()) do
         local text = describe(p.set)
         if text then ns.SendChat(("%s – %s"):format(Names.Display(p.name), text), channel) end
+        local single = describeSingles(p)
+        if single then ns.SendChat(("%s – %s"):format(Names.Display(p.name), single), channel) end
     end
 end
 
@@ -574,9 +974,10 @@ end
 ---------------------------------------------------------------------------
 local PP = "PLPWR"
 local PP_CLASSES = { "WARRIOR", "ROGUE", "PRIEST", "DRUID", "PALADIN", "HUNTER", "MAGE", "WARLOCK", "SHAMAN" }
-local PP_BLESS = { ["1"] = "wisdom", ["2"] = "might", ["3"] = "kings" }
-local PP_DIGIT = { wisdom = "1", might = "2", kings = "3" }
-local PP_SKILLS = { "wisdom", "might", "kings" }   -- order of the skill pairs in SELF
+-- 4 = Salvation (not a blessing on Forever), 7 = Sacrifice: kept as they are
+local PP_BLESS = { ["1"] = "wisdom", ["2"] = "might", ["3"] = "kings", ["5"] = "light", ["6"] = "sanctuary" }
+local PP_DIGIT = { wisdom = "1", might = "2", kings = "3", light = "5", sanctuary = "6" }
+local PP_SKILLS = { "wisdom", "might", "kings", false, "light", "sanctuary" }   -- order of the skill pairs in SELF
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then ns.Call(C_ChatInfo.RegisterAddonMessagePrefix, PP) end
 local senderMayAssign   -- defined below
 
@@ -588,8 +989,8 @@ end
 local function ppSend() return B.Settings().ppSync and not ppSelfLoaded() end
 local function ppRead() return B.Settings().ppRead end
 
--- 9 class digits plus the unused tenth; blessings PallyPower has that this
--- addon does not (digits 4–9) stay as they were
+-- 9 class digits plus the unused tenth; digits this addon does not know
+-- (4, 7–9) stay as they were
 local function ppSet(set, other)
     local out = {}
     for i, class in ipairs(PP_CLASSES) do
@@ -602,7 +1003,7 @@ local function ppParse(text)
     local set, other = {}, {}
     for i, class in ipairs(PP_CLASSES) do
         local c = text:sub(i, i)
-        if PP_BLESS[c] then set[class] = PP_BLESS[c] elseif c:find("^[4-9]$") then other[class] = c end
+        if PP_BLESS[c] then set[class] = PP_BLESS[c] elseif c:find("^[47-9]$") then other[class] = c end
     end
     return set, other
 end
@@ -610,13 +1011,46 @@ end
 local function ppSkills()
     local out = {}
     for _, key in ipairs(PP_SKILLS) do
-        local id, rank = B.SpellFor(key, "single"), nil
-        for i, sid in ipairs(B.BY_KEY[key].single) do if sid == id then rank = i end end
+        local id, rank = key and B.SpellFor(key, "single"), nil
+        for i, sid in ipairs(key and B.BY_KEY[key].single or {}) do if sid == id then rank = i end end
         out[#out + 1] = rank and ("%x0"):format(rank) or "nn"
     end
-    return table.concat(out) .. "nnnnnn"
+    return table.concat(out)
 end
 B.PPSet, B.PPParse, B.PPSkills = ppSet, ppParse, ppSkills
+
+-- PallyPower single blessings: "NASSIGN <paladin> <class no.> <player> <digit>", names with
+-- "_" instead of the space, up to five per message joined by "@"; digit 0 = removed
+local PP_CLASS_NO = {}
+for i, c in ipairs(PP_CLASSES) do PP_CLASS_NO[c] = i end
+local function wire(name) return (tostring(name or ""):gsub(" ", "_")) end
+local function unwire(name) return (tostring(name or ""):gsub("_", " ")) end
+function B.PPSingles(p)
+    local list, now = {}, {}
+    local pname = wire(p.name or Names.Display(p.key))
+    for key, b in pairs(p.single or {}) do
+        local m = B.members[key]
+        local digit, no = PP_DIGIT[b], m and PP_CLASS_NO[m.class]
+        if m and digit and no then
+            list[#list + 1] = ("%s %d %s %s"):format(pname, no, wire(m.name), digit)
+            now[key] = no
+        end
+    end
+    -- removed since the last message: digit 0
+    for key, no in pairs(p.ppSent or {}) do
+        local m = B.members[key]
+        if not now[key] and m then list[#list + 1] = ("%s %d %s 0"):format(pname, no, wire(m.name)) end
+    end
+    table.sort(list)
+    local out = {}
+    for i = 1, #list, 5 do out[#out + 1] = "NASSIGN " .. table.concat(list, "@", i, math.min(i + 4, #list)) end
+    return out, now
+end
+local function sendPPSingles(p, channel)
+    local msgs, now = B.PPSingles(p)
+    p.ppSent = now
+    for _, m in ipairs(msgs) do Comm.SendRaw(PP, m, channel, { priority = "normal" }) end
+end
 
 function B.Share(p)
     if B.test then return end
@@ -625,7 +1059,7 @@ function B.Share(p)
     p = p or B.Me()
     if not p then return end
     local mine = Names.Same(p.key, me)
-    Comm.Send("BL", { p = p.key, s = encode(p.set), c = mine and encodeSkills(p.can) or nil, f = mine and (B.Settings().freeAssign and 1 or nil) or nil },
+    Comm.Send("BL", { p = p.key, s = encode(p.set), i = encodeSingles(p), c = mine and encodeSkills(p.can) or nil, f = mine and (B.Settings().freeAssign and 1 or nil) or nil },
         "GROUP", { priority = "normal" })
     -- PallyPower users (guests without this addon) see it too
     local channel = ns.GroupChannel()
@@ -633,9 +1067,11 @@ function B.Share(p)
         if mine then
             if not isPaladin() then return end
             Comm.SendRaw(PP, "SELF " .. ppSkills() .. "@" .. ppSet(p.set), channel, { priority = "normal" })
+            sendPPSingles(p, channel)
             Comm.SendRaw(PP, "FREEASSIGN " .. (B.Settings().freeAssign and "YES" or "NO"), channel, { priority = "normal" })
         elseif senderMayAssign(me, p.key) then
             Comm.SendRaw(PP, ("PASSIGN %s@%s"):format(p.name or Names.Display(p.key), ppSet(p.set, p.ppOther)), channel, { priority = "normal" })
+            sendPPSingles(p, channel)
             -- a guest answers REQ with SELF: shows whether the change arrived
             if p.addon == "pp" then
                 ns.Debounce("bless-pp-verify", 1.5, function()
@@ -662,10 +1098,12 @@ senderMayAssign = function(senderKey, targetKey)
     return target ~= nil and target.free == true
 end
 
-local function apply(targetKey, set, can, free, via, other)
+-- singles: { single, pinned } or nil (sender without singles: keep ours)
+local function apply(targetKey, set, can, free, via, other, singles)
     B.Rebuild()
     local p = B.paladins[targetKey]
     if not p then return end
+    if singles then p.single, p.pinned = singles[1], singles[2] end
     if p.me then
         -- someone (lead) assigned us: take it over
         p.set = set
@@ -688,7 +1126,9 @@ Comm.Register("BL", function(data, sender)
     if Names.Same(sender, Names.Me()) then return end
     local p = B.paladins[target]
     if p and Names.Same(target, sender) then p.addon = "lg" end
-    apply(target, decode(data.s), data.c and decodeSkills(data.c) or nil, data.c and (data.f == 1) or nil, "lg")
+    local single, pinned = decodeSingles(data.i)
+    apply(target, decode(data.s), data.c and decodeSkills(data.c) or nil, data.c and (data.f == 1) or nil, "lg", nil,
+        single and { single, pinned } or nil)
 end)
 
 Comm.Register("BLQ", function()
@@ -716,7 +1156,10 @@ local function hearPallyPower(text, senderKey)
         local p = B.paladins[senderKey]
         if not p or #skills < 6 then return end
         local can = {}
-        for i, k in ipairs(PP_SKILLS) do can[k] = skills:sub(2 * i - 1, 2 * i - 1) == "n" and 0 or 2 end
+        for i, k in ipairs(PP_SKILLS) do
+            local c = skills:sub(2 * i - 1, 2 * i - 1)
+            if k then can[k] = (c == "" or c == "n") and 0 or 2 end
+        end
         local s, other = ppParse(set)
         if p.addon ~= "lg" then apply(senderKey, s, can, nil, "pp", other) end
         return
@@ -737,7 +1180,7 @@ local function hearPallyPower(text, senderKey)
         local key, class = target(name), PP_CLASSES[tonumber(classIdx)]
         if key and class then
             local s, o = current(key)
-            s[class], o[class] = PP_BLESS[digit], (digit:find("^[4-9]$") and digit) or nil
+            s[class], o[class] = PP_BLESS[digit], (digit:find("^[47-9]$") and digit) or nil
             apply(key, s, nil, nil, "pp", o)
         end
         return
@@ -748,6 +1191,31 @@ local function hearPallyPower(text, senderKey)
         if key then
             local s, o = ppParse(pset)
             apply(key, s, nil, nil, "pp", o)
+        end
+        return
+    end
+    if text:find("^NASSIGN ") then
+        local touched = {}
+        for entry in text:sub(9):gmatch("[^@]+") do
+            local pname, no, tname, digit = entry:match("^(%S+) (%d+) (%S+) (%d+)$")
+            local key = pname and target(unwire(pname))
+            local tkey = tname and Names.Key(unwire(tname))
+            local p = key and B.paladins[key]
+            if p and tkey and PP_CLASSES[tonumber(no)] then
+                p.single, p.pinned = p.single or {}, p.pinned or {}
+                local b = PP_BLESS[digit]
+                p.single[tkey] = b
+                p.pinned[tkey] = b and true or nil   -- set by a person
+                touched[p] = true
+            end
+        end
+        for p in pairs(touched) do
+            if p.me then changed(p, true)
+            else
+                if p.addon ~= "lg" then p.addon = "pp" end
+                ns.Debounce("bless-scan", 0.3, B.Scan)
+                if ns.BlessingsBar then ns.BlessingsBar.Update() end
+            end
         end
         return
     end
@@ -827,34 +1295,33 @@ end)
 -- and its clicks cast nothing.
 ---------------------------------------------------------------------------
 local TEST_RAID = { WARRIOR = 6, ROGUE = 3, HUNTER = 3, PRIEST = 4, MAGE = 5, WARLOCK = 3, DRUID = 3, PALADIN = 4 }
-local TEST_NAMES = { "Arwen Stormwind", "Borin Ironfist", "Cara Lightweaver", "Dorn Shadowsong", "Elin Morningdew", "Falk Greyholt" }
+local TEST_FIRST = { "Arwen", "Borin", "Cara", "Dorn", "Elin", "Falk", "Gwen", "Hask", "Ilsa", "Jory", "Kael", "Lyra", "Miro",
+    "Nessa", "Orin", "Pella", "Quin", "Rhea", "Soren", "Tamsin", "Ulric", "Vela", "Wren", "Xander", "Yara", "Zeno", "Aldo",
+    "Brin", "Cyra", "Dexter", "Edda", "Fenn" }
+local TEST_LAST = { "Stormwind", "Ironfist", "Lightweaver", "Shadowsong", "Morningdew", "Greyholt", "Ashvale", "Brightwater" }
+-- what the made-up raiders play: a warrior tank, a protection paladin, a feral druid
+local TEST_TYPES = { ["lgtest-warrior-1"] = "tank", ["lgtest-paladin-4"] = "tank", ["lgtest-druid-3"] = "melee" }
 
 function B.TestScan()
     wipe(B.status)
     wipe(B.missing)
-    local n = 0
+    wipe(B.unitHas)
     for class, units in pairs(classUnits) do
-        local st = { total = #units, have = {}, left = {}, need = {} }
-        for _, p in pairs(B.paladins) do
-            local b = p.set and p.set[class]
-            if b and not st.have[b] then
-                -- some classes fully buffed, some missing one or two, some running out
-                local hash = (#class * 7 + #b * 3) % 4
-                st.have[b] = math.max(0, #units - (hash == 0 and 0 or hash == 1 and 1 or hash == 2 and 2 or 0))
-                st.left[b] = hash == 3 and 140 or (600 + hash * 300)
-                if st.have[b] < #units then
-                    st.need[b] = {}
-                    for i = st.have[b] + 1, #units do
-                        n = n + 1
-                        st.need[b][#st.need[b] + 1] = units[i]
-                        local name = TEST_NAMES[(n - 1) % #TEST_NAMES + 1]
-                        B.missing[#B.missing + 1] = { key = Names.Key(name) .. n, name = name, class = class, list = { b }, unit = units[i] }
-                    end
-                end
+        local st = { total = #units, have = {}, left = {}, need = {}, want = {}, units = {} }
+        for i, unit in ipairs(units) do
+            local key = B.unitKey[unit]
+            -- some players miss a blessing, some run out soon
+            local has = {}
+            for _, b in ipairs(B.LIST) do
+                local hash = (#class * 7 + #b.key * 3 + i * 5) % 9
+                if hash ~= 0 then has[b.key] = hash == 1 and 140 or (600 + hash * 120) end
             end
+            if key then B.unitHas[key] = { has = has } end
+            B.CountUnit(st, unit, key, class, has)
         end
         B.status[class] = st
     end
+    table.sort(B.missing, function(a, b) return a.key < b.key end)
     ns.Fire("LG_BLESSINGS")
 end
 
@@ -863,18 +1330,35 @@ function B.Test(seconds)
     B.test = GetTime() + seconds
     wipe(B.paladins)
     wipe(classUnits)
-    for class, count in pairs(TEST_RAID) do
-        classUnits[class] = {}
-        for i = 1, count do classUnits[class][i] = ("lgtest-%s-%d"):format(class:lower(), i) end
+    wipe(B.members); wipe(B.unitKey); wipe(B.testTypes)
+    local n = 0
+    for _, class in ipairs(B.CLASSES) do
+        local count = TEST_RAID[class]
+        if count then
+            classUnits[class] = {}
+            for i = 1, count do
+                local unit = ("lgtest-%s-%d"):format(class:lower(), i)
+                classUnits[class][i] = unit
+                n = n + 1
+                local name = TEST_FIRST[(n - 1) % #TEST_FIRST + 1] .. " " .. TEST_LAST[(n - 1) % #TEST_LAST + 1]
+                addMember(unit, Names.Key(name), name, class)
+                B.testTypes[unit] = TEST_TYPES[unit]
+            end
+        end
     end
+    local function keyOf(unit) return B.unitKey[unit] end
     local me = Names.Me()
-    local full = { kings = 2, might = 2, wisdom = 2 }
+    local full = { kings = 2, might = 2, wisdom = 2, light = 2, sanctuary = 0 }
+    -- you: Light for every paladin, but Might for the protection paladin (set by hand)
     B.paladins[me] = { key = me, name = Names.Unit("player") or Names.Display(me), unit = "player", addon = "lg", me = true,
-        can = isPaladin() and B.OwnSkills() or full, set = { WARRIOR = "might", ROGUE = "might", HUNTER = "might" } }
+        can = isPaladin() and B.OwnSkills() or full, set = { WARRIOR = "might", ROGUE = "might", HUNTER = "might", PALADIN = "light" },
+        single = { [keyOf("lgtest-paladin-4")] = "might" }, pinned = { [keyOf("lgtest-paladin-4")] = true } }
     B.paladins["test lightbringer"] = { key = "test lightbringer", name = "Test Lightbringer", addon = "lg", can = full,
-        set = { WARRIOR = "kings", ROGUE = "kings", PRIEST = "kings", MAGE = "kings" } }
-    B.paladins["test silverhand"] = { key = "test silverhand", name = "Test Silverhand", addon = "lg", can = { kings = 0, might = 2, wisdom = 2 },
-        set = { PRIEST = "wisdom", MAGE = "wisdom", WARLOCK = "wisdom", DRUID = "wisdom" } }
+        set = { WARRIOR = "kings", ROGUE = "kings", PRIEST = "kings", MAGE = "kings", PALADIN = "kings" } }
+    -- Wisdom for the druids, the feral one gets Might instead (smart assign)
+    B.paladins["test silverhand"] = { key = "test silverhand", name = "Test Silverhand", addon = "lg", can = { kings = 0, might = 2, wisdom = 2, light = 2, sanctuary = 0 },
+        set = { PRIEST = "wisdom", MAGE = "wisdom", WARLOCK = "wisdom", DRUID = "wisdom", PALADIN = "wisdom" },
+        single = { [keyOf("lgtest-druid-3")] = "might" }, pinned = {} }
     B.paladins["test pallypower"] = { key = "test pallypower", name = "Test PallyPower", addon = "pp", can = full, set = {} }
     B.TestScan()
     if ns.BlessingsBar then ns.BlessingsBar.Update() end
@@ -886,12 +1370,48 @@ function B.Test(seconds)
     end)
 end
 
+-- /lg test blessspells: which ranks you know (by id or by name), learned ids
+function B.SpellReport()
+    learnNames()
+    for _, b in ipairs(B.LIST) do
+        local function part(kind)
+            local id = B.SpellFor(b.key, kind)
+            local how = id and (known(id) and ("id " .. id) or L.BLESS_SPELLS_BYNAME) or "–"
+            return how
+        end
+        local learned = {}
+        for id, v in pairs(B.Settings().learned or {}) do if tostring(v):match("^" .. b.key .. ":") then learned[#learned + 1] = tostring(id) end end
+        ns.Print(L.BLESS_SPELLS_LINE:format(B.Name(b.key), part("single"), part("greater"),
+            #learned > 0 and table.concat(learned, ", ") or "–"))
+    end
+end
+
+-- /lg test blessspec: what every group member plays and wants, and what you give him
+function B.SpecReport()
+    if not B.test then B.Rebuild() end
+    local members, classes = B.GroupWishes()
+    if not IsInGroup() and not B.test then ns.Print(L.BLESS_SPEC_SOLO); return end
+    local me = B.Me()
+    for _, class in ipairs(classes) do
+        for _, m in ipairs(members[class]) do
+            local info = m.key and B.members[m.key]
+            local names = {}
+            for _, b in ipairs(m.wishes) do names[#names + 1] = B.Name(b) end
+            local mine = me and gives(me, m.key, class)
+            ns.Print(L.BLESS_SPEC_LINE:format(ns.ColorName(info and info.name or m.unit or "?", class), L["BLESS_TYPE_" .. m.kind:upper()] or m.kind,
+                L["BLESS_SRC_" .. tostring(m.source):upper()] or tostring(m.source), table.concat(names, ", "),
+                mine and B.Name(mine) or "–"))
+        end
+    end
+end
+
 function B.StopTest()
     if not B.test then return end
     B.test = nil
     wipe(B.paladins)
     wipe(B.status)
     wipe(B.missing)
+    wipe(B.testTypes)
     rosterChanged()
     if wanted() then B.Scan() else ns.Fire("LG_BLESSINGS") end
     ns.AfterCombat("bless-bar", function() if ns.BlessingsBar then ns.BlessingsBar.Update() end end)

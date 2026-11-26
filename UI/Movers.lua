@@ -331,6 +331,12 @@ local function scales()
     return m.scale
 end
 
+function Movers.Scale(key) return scales()[key] or 1 end
+function Movers.SetScale(key, v)
+    scales()[key] = (v and v ~= 1) and v or nil
+    Movers.Follow(key)
+end
+
 function Movers.Follow(key)
     local a = anchors[key]
     if not a then return end

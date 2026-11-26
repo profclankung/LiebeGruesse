@@ -70,6 +70,9 @@ function Native.Ready()
     return true
 end
 
+-- learned ids (Blessings.Learn): build the filters again, segments follow at the next layout
+function Native.ResetFilters() wipe(filters) end
+
 -- spell ids of a blessing: every rank, single and greater
 local function filterFor(blessing)
     local f = filters[blessing]
