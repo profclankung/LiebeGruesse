@@ -9,9 +9,11 @@ local B = ns.NewModule("blessings")
 ns.Blessings = B
 
 ---------------------------------------------------------------------------
--- Spells (greater = whole class, WoW: Forever has them too). No Salvation as a
--- blessing on Forever (it stacks there). Blessings a paladin does not know are
--- never offered (Kings and Sanctuary need talents); without the greater one the
+-- Spells (greater = whole class, WoW: Forever has them too). Forever has only
+-- Kings, Might and Wisdom as blessings: no Salvation (it stacks there), no
+-- Sanctuary, and Light became Oath of Light (one target, on top of a blessing –
+-- a button on the bar, not an assignment). Blessings a paladin does not know are
+-- never offered (Kings needs a talent); without the greater one the
 -- bar casts the normal one. Ranks are also found by name in the spell book, and
 -- blessing ids seen on players are learned (Forever can use other ids).
 ---------------------------------------------------------------------------
@@ -19,8 +21,6 @@ B.LIST = {
     { key = "kings", single = { 20217 }, greater = { 25898 }, short = "K" },
     { key = "might", single = { 19740, 19834, 19835, 19836, 19837, 19838, 25291 }, greater = { 25782, 25916 }, short = "M" },
     { key = "wisdom", single = { 19742, 19850, 19852, 19853, 19854, 25290 }, greater = { 25894, 25918 }, short = "W" },
-    { key = "light", single = { 19977, 19978, 19979 }, greater = { 25890 }, short = "L" },
-    { key = "sanctuary", single = { 20911, 20912, 20913, 20914 }, greater = { 25899 }, short = "N" },
 }
 B.BY_KEY = {}
 for i, b in ipairs(B.LIST) do b.order = i; B.BY_KEY[b.key] = b end
@@ -29,7 +29,7 @@ B.CLASSES = { "WARRIOR", "PALADIN", "HUNTER", "ROGUE", "PRIEST", "SHAMAN", "MAGE
 
 ---------------------------------------------------------------------------
 -- Specs: what a player wants depends on what he plays (feral druid: Might,
--- restoration druid: Wisdom; tanks Sanctuary)
+-- restoration druid: Wisdom)
 ---------------------------------------------------------------------------
 -- kind of player per class and talent tree (feral = cat or bear, decided by the group role)
 local TREE_TYPES = {
@@ -47,11 +47,11 @@ local HEALERS = { PRIEST = true, PALADIN = true, SHAMAN = true, DRUID = true }
 local DAMAGE = { WARRIOR = "melee", PALADIN = "melee", HUNTER = "ranged", ROGUE = "melee", PRIEST = "caster", MAGE = "caster", WARLOCK = "caster" }
 -- best first
 local TYPE_WISHES = {
-    tank = { "kings", "might", "sanctuary", "light" },
-    melee = { "kings", "might", "light" },
-    ranged = { "kings", "might", "wisdom", "light" },
-    caster = { "kings", "wisdom", "light" },
-    healer = { "kings", "wisdom", "light" },
+    tank = { "kings", "might" },
+    melee = { "kings", "might" },
+    ranged = { "kings", "might", "wisdom" },
+    caster = { "kings", "wisdom" },
+    healer = { "kings", "wisdom" },
 }
 B.TYPES = { "tank", "melee", "ranged", "caster", "healer" }
 B.CLASS_TYPE = CLASS_TYPE
@@ -689,6 +689,26 @@ function B.Cycle(p, class, delta, keep)
     return true
 end
 
+-- Shift + mouse wheel: the whole row of a paladin – this class cycles, every
+-- class in the group (solo: all) gets the same blessing.
+function B.CycleRow(p, class, delta, keep)
+    if not B.Cycle(p, class, delta, keep) then return false end
+    local b = p.set[class]
+    local solo = not IsInGroup() and not B.test
+    for _, c in ipairs(B.CLASSES) do
+        if solo or (B.classUnits[c] and #B.classUnits[c] > 0) or c == class then p.set[c] = b end
+    end
+    changed(p, true)
+    ns.Debounce("bless-wheel-share", 1, function() B.Share(p) end)
+    return true
+end
+local function shift() return IsShiftKeyDown and IsShiftKeyDown() and true or false end
+-- wheel on a class: shift = whole row
+function B.WheelClass(p, class, delta, keep)
+    if shift() then return B.CycleRow(p, class, delta, keep) end
+    return B.Cycle(p, class, delta, keep)
+end
+
 -- Single blessing for one player (replaces this paladin's class blessing on him).
 -- Set by hand = pinned: smart assign keeps it. blessing nil removes it.
 function B.SetSingle(p, key, blessing, auto)
@@ -1086,9 +1106,9 @@ end
 local PP = "PLPWR"
 local PP_CLASSES = { "WARRIOR", "ROGUE", "PRIEST", "DRUID", "PALADIN", "HUNTER", "MAGE", "WARLOCK", "SHAMAN" }
 -- 4 = Salvation (not a blessing on Forever), 7 = Sacrifice: kept as they are
-local PP_BLESS = { ["1"] = "wisdom", ["2"] = "might", ["3"] = "kings", ["5"] = "light", ["6"] = "sanctuary" }
-local PP_DIGIT = { wisdom = "1", might = "2", kings = "3", light = "5", sanctuary = "6" }
-local PP_SKILLS = { "wisdom", "might", "kings", false, "light", "sanctuary" }   -- order of the skill pairs in SELF
+local PP_BLESS = { ["1"] = "wisdom", ["2"] = "might", ["3"] = "kings" }
+local PP_DIGIT = { wisdom = "1", might = "2", kings = "3" }
+local PP_SKILLS = { "wisdom", "might", "kings", false, false, false }   -- order of the skill pairs in SELF
 if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then ns.Call(C_ChatInfo.RegisterAddonMessagePrefix, PP) end
 local senderMayAssign   -- defined below
 
@@ -1101,7 +1121,7 @@ local function ppSend() return B.Settings().ppSync and not ppSelfLoaded() end
 local function ppRead() return B.Settings().ppRead end
 
 -- 9 class digits plus the unused tenth; digits this addon does not know
--- (4, 7–9) stay as they were
+-- (4–9: none of them is a blessing on Forever) stay as they were
 local function ppSet(set, other)
     local out = {}
     for i, class in ipairs(PP_CLASSES) do
@@ -1114,7 +1134,7 @@ local function ppParse(text)
     local set, other = {}, {}
     for i, class in ipairs(PP_CLASSES) do
         local c = text:sub(i, i)
-        if PP_BLESS[c] then set[class] = PP_BLESS[c] elseif c:find("^[47-9]$") then other[class] = c end
+        if PP_BLESS[c] then set[class] = PP_BLESS[c] elseif c:find("^[4-9]$") then other[class] = c end
     end
     return set, other
 end
@@ -1291,7 +1311,7 @@ local function hearPallyPower(text, senderKey)
         local key, class = target(name), PP_CLASSES[tonumber(classIdx)]
         if key and class then
             local s, o = current(key)
-            s[class], o[class] = PP_BLESS[digit], (digit:find("^[47-9]$") and digit) or nil
+            s[class], o[class] = PP_BLESS[digit], (digit:find("^[4-9]$") and digit) or nil
             apply(key, s, nil, nil, "pp", o)
         end
         return
@@ -1492,15 +1512,15 @@ function B.Test(seconds)
     end
     local function keyOf(unit) return B.unitKey[unit] end
     local me = Names.Me()
-    local full = { kings = 2, might = 2, wisdom = 2, light = 2, sanctuary = 0 }
+    local full = { kings = 2, might = 2, wisdom = 2 }
     -- you: Light for every paladin, but Might for the protection paladin (set by hand)
     B.paladins[me] = { key = me, name = Names.Unit("player") or Names.Display(me), unit = "player", addon = "lg", me = true,
-        can = isPaladin() and B.OwnSkills() or full, set = { WARRIOR = "might", ROGUE = "might", HUNTER = "might", PALADIN = "light" },
+        can = isPaladin() and B.OwnSkills() or full, set = { WARRIOR = "might", ROGUE = "might", HUNTER = "might", PALADIN = "wisdom" },
         single = { [keyOf("lgtest-paladin-4")] = "might" }, pinned = { [keyOf("lgtest-paladin-4")] = true } }
     B.paladins["test lightbringer"] = { key = "test lightbringer", name = "Test Lightbringer", addon = "lg", can = full,
         set = { WARRIOR = "kings", ROGUE = "kings", PRIEST = "kings", MAGE = "kings", PALADIN = "kings" } }
     -- Wisdom for the druids, the feral one gets Might instead (smart assign)
-    B.paladins["test silverhand"] = { key = "test silverhand", name = "Test Silverhand", addon = "lg", can = { kings = 0, might = 2, wisdom = 2, light = 2, sanctuary = 0 },
+    B.paladins["test silverhand"] = { key = "test silverhand", name = "Test Silverhand", addon = "lg", can = { kings = 0, might = 2, wisdom = 2 },
         set = { PRIEST = "wisdom", MAGE = "wisdom", WARLOCK = "wisdom", DRUID = "wisdom", PALADIN = "wisdom" },
         single = { [keyOf("lgtest-druid-3")] = "might" }, pinned = {} }
     B.paladins["test pallypower"] = { key = "test pallypower", name = "Test PallyPower", addon = "pp", can = full, set = {} }

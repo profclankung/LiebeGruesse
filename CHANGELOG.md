@@ -2,6 +2,10 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.88] – 2026-11-26
+
+- style(blessings): the lock button of the blessing bar sits in the top right corner
+
 ## [1.0.87] – 2026-11-26
 
 - feat(blessings): players under every class in the quick window and on the page – mouse wheel on a name sets your single blessing for him (back to your class blessing is part of the cycle), a click opens every paladin's blessings as icons (one click sets it), right click removes his single blessings
@@ -15,6 +19,15 @@ All notable changes to Liebe Grüße – Guild Tools. Newest first.
 - change(blessings): left click on the bar = greater blessing, right click = normal blessing (class rows and player buttons; on a player with a single blessing both cast it); mouse wheel on a player sets his single blessing
 - change(blessings): short tooltips – name, blessing and state, missing players in one line, one line of hints
 - fix(blessings): the Righteous Fury button shows for every spec as soon as it is switched on in Blessings › Settings, also when the game has no name for the old spell id
+- feat(blessings): hovering a paladin's cell in the quick window or on the page unfolds every player of that class below it – mouse wheel on a name sets THAT paladin's single blessing (no more only your own), click picks, right click removes; a dot shows whether he has it
+- fix(blessings): tooltips of the player lists sit beside the list instead of on top of the blessing icons and update right away after a mouse wheel or click
+- change(blessings): full names in player lists, cell lines and the picker (two players with the same first name stay apart); bigger names and icons, wider columns in the quick window
+- fix(blessings): the known-blessing icons of a paladin in the quick window no longer overlap "You"
+- change(blessings): only Kings, Might and Wisdom as blessings – Sanctuary does not exist on Forever and Light is Oath of Light there (it showed the Kings icon); old assignments of both are dropped, PallyPower digits 5 and 6 are passed on unchanged
+- feat(blessings): Oath of Light button on the bar (shown when you know it, option in Blessings › Settings) – casts it on the player you chose (mouse wheel or right click, tanks first; without a choice on your target), green while he has it. /lg test blessoath
+- feat(blessings): Shift + mouse wheel on a cell of the quick window or page (or a class row of the bar) gives the whole row the same blessing – every class in the group. /lg test blessflyout
+- change(blessings): full names in the pop-outs and tooltips of the bar too
+- change(blessings): no blessing icon in the top right corner of the bar any more
 
 ## [1.0.86] – 2026-11-26
 

@@ -5,8 +5,8 @@ local UI, Theme, L, Names = ns.UI, ns.Theme, ns.L, ns.Names
 local B = ns.Blessings
 local P = ns.BlessPlayers
 
-local COL_W, ROW_H, NAME_W = 74, 46, 170
-local CELL_TOP = 42   -- single lines below icon and count
+local COL_W, ROW_H, NAME_W = 96, 48, 170
+local CELL_TOP = 44   -- single lines below icon and count
 
 local function className(class)
     return ns.ClassName(class)
@@ -51,6 +51,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         selfB:Dropdown(L.BLESS_SELF_SEAL_PICK, choices(ns.BlessingsBar.SEALS), function() return o().sealSpell or ns.BlessingsBar.SelfChoice("seal") end,
             function(v) o().sealSpell = v; barUpdate() end, { show = function() return o().seal == true end })
         selfB:Toggle(L.BLESS_SELF_FURY, function() return o().fury == true end, function(v) o().fury = v; barUpdate() end, { tip = L.BLESS_SELF_FURY_TIP_OPT })
+        selfB:Toggle(L.BLESS_SELF_OATH_OPT, function() return o().oath ~= false end, function(v) o().oath = v; barUpdate() end, { tip = L.BLESS_SELF_OATH_OPT_TIP })
         local sync = form:Section(L.BLESS_SYNC)
         sync:Toggle(L.BLESS_FREE, function() return o().freeAssign end, function(v) o().freeAssign = v; B.Share(B.Me()) end, { tip = L.BLESS_FREE_TIP })
         -- PallyPower: guests without this addon (read) and sending to them (sync)
@@ -164,9 +165,9 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         c:SetScript("OnMouseWheel", function(self, delta)
             if not self.p then return end
             if not B.CanEdit(self.p) then ns.Print(L.BLESS_CANT_EDIT); return end
-            B.Cycle(self.p, self.class, delta)
-            ns.Window.Refresh("blessings")
-            if self:IsMouseOver() and self:GetScript("OnEnter") then self:GetScript("OnEnter")(self) end
+            B.WheelClass(self.p, self.class, delta)
+            if B.PageDraw then B.PageDraw() else ns.Window.Refresh("blessings") end
+            P.Retip()
         end)
         c:SetScript("OnEnter", function(self)
             if not self.p then return end
@@ -181,9 +182,12 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
             end
             -- (no blank line: short tooltips)
             lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
-            UI.Tooltip(self, (b and B.Name(b) or L.BLESS_NONE) .. " · " .. className(self.class), lines)
+            -- above the cell: below it unfold his players of this class
+            P.hover = self
+            P.Tip(self, (b and B.Name(b) or L.BLESS_NONE) .. " · " .. className(self.class), lines, "ANCHOR_TOP")
+            P.ShowFly(self)
         end)
-        c:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        c:SetScript("OnLeave", P.Unhover)
         row.cells[i] = c
         return c
     end
@@ -290,7 +294,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
             for _, c in ipairs(classes) do if ns.SearchAny(className(c), q) then page.hits = page.hits + 1 end end
         end
         local W = math.max(400, (scroll:GetWidth() or 800) - 8)
-        local colW = math.max(60, math.min(COL_W + 20, math.floor((W - NAME_W) / math.max(1, #classes))))
+        local colW = math.max(72, math.min(COL_W + 24, math.floor((W - NAME_W) / math.max(1, #classes))))
 
         -- title + counters
         local zone = ns.Call(GetInstanceInfo)
@@ -499,6 +503,8 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         y = y + math.ceil(#B.missing / perLine) * 22 + 10
         body:SetHeight(y)
         scroll.UpdateBar()
+        P.UpdateFly()
+        P.Retip()
     end
 
     page.searchHint = L.BLESS_SEARCH

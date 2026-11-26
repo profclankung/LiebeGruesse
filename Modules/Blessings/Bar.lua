@@ -258,6 +258,57 @@ Bar.AURAS = { { 465 }, { 7294 }, { 19746 }, { 19876 }, { 19888 }, { 19891 }, { 2
 -- Seal of Fury (WoW: Forever): 1311656 is rank 2; rank 1 is found by name in the spell book
 Bar.SEALS = { { 21084, 20154 }, { 21082 }, { 20165 }, { 20166 }, { 20164 }, { 20375 }, { 1311656 } }
 Bar.FURY = { 25780 }
+-- Oath of Light (WoW: Forever, holy talent): one player at a time, on top of
+-- his blessing. The button casts it on the player you chose (wheel / right
+-- click); without a choice on your target.
+Bar.OATH = { 1328548 }
+local OATH_NAMES = { "Oath of Light", "Eid des Lichts" }
+function Bar.OathSpell()
+    local name = B.SpellName(Bar.OATH[1])
+    if B.Known(Bar.OATH[1]) then return name or OATH_NAMES[1], Bar.OATH[1], true end
+    local names = { name }
+    for _, n in ipairs(OATH_NAMES) do names[#names + 1] = n end
+    for _, n in ipairs(names) do
+        if type(n) == "string" and n ~= "" and C_Spell and C_Spell.GetSpellInfo then
+            local info = ns.Call(C_Spell.GetSpellInfo, n)
+            if type(info) == "table" and info.spellID then return info.name or n, info.spellID, true end
+        end
+    end
+    return name or OATH_NAMES[1], Bar.OATH[1], false
+end
+-- group members for the oath: tanks first, then healers, then the rest, by name
+local OATH_ORDER = { tank = 1, healer = 2 }
+function Bar.OathTargets()
+    local out = {}
+    for key, m in pairs(B.members or {}) do
+        local kind = B.UnitType(m.unit, key, m.class)
+        out[#out + 1] = { key = key, m = m, order = OATH_ORDER[kind] or 3, kind = kind }
+    end
+    table.sort(out, function(a, b) if a.order ~= b.order then return a.order < b.order end return a.key < b.key end)
+    return out
+end
+local oathSeen = {}
+function Bar.OathReport()
+    local name, id, known = Bar.OathSpell()
+    local key = opt().oathTarget
+    local m = key and B.members[key]
+    ns.Print(("%s (%s): %s · button %s · target: %s%s"):format(tostring(name), tostring(id), known and "known" or "not known",
+        opt().oath == false and "off" or "on", m and m.name or L.BLESS_OATH_YOUR_TARGET,
+        m and (" · " .. (oathSeen[key] and L.BLESS_SELF_ON or L.BLESS_SELF_OFF)) or ""))
+end
+-- does the chosen player have it (last readable state; hidden in combat)
+local function readOath(unit, key, name)
+    if not unit or not key or not name or not C_UnitAuras or not C_UnitAuras.GetAuraDataByIndex then return oathSeen[key] end
+    for i = 1, 40 do
+        local ok, a = pcall(C_UnitAuras.GetAuraDataByIndex, unit, i, "HELPFUL")
+        if not ok or ns.IsSecret(a) then return oathSeen[key] end
+        if type(a) ~= "table" then break end
+        if ns.IsSecret(a.name) then return oathSeen[key] end
+        if a.name == name then oathSeen[key] = true; return true end
+    end
+    oathSeen[key] = false
+    return false
+end
 local knownByName = B.KnownByName
 -- first known id of an entry, else the first id (for its name); casting goes by
 -- name, so the game takes the highest rank you have
@@ -432,7 +483,7 @@ local function makeRow(i)
             else
                 local miss, singles = {}, {}
                 for _, e in ipairs(rs.players) do
-                    local name = ns.Names.Display(e.name):match("^(%S+)") or e.name
+                    local name = ns.Names.Display(e.name) or e.name
                     if not e.has then miss[#miss + 1] = name end
                     if e.single then singles[#singles + 1] = blessIcon(e.blessing, 12) .. " " .. name end
                 end
@@ -448,7 +499,7 @@ local function makeRow(i)
         r:SetScript("OnMouseWheel", function(self, delta)
             if not self.cls then return end
             if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
-            if B.Cycle(B.Me(), self.cls, delta, true) then
+            if B.WheelClass(B.Me(), self.cls, delta, true) then
                 self.blessing = B.Me().set[self.cls]
                 if self:IsMouseOver() then self:GetScript("OnEnter")(self) end
             end
@@ -494,10 +545,25 @@ local function makeSelfButton(kind)
     b:SetScript("OnEnter", function(self)
         UI.Tooltip(self, self.spell or L["BLESS_SELF_" .. kind:upper()], {
             self.active and Theme.HexColor("good", L.BLESS_SELF_ON) or Theme.HexColor("bad", L.BLESS_SELF_OFF),
-            kind == "fury" and L.BLESS_SELF_FURY_TIP or L.BLESS_SELF_WHEEL_TIP })
+            kind == "fury" and L.BLESS_SELF_FURY_TIP or kind == "oath" and L.BLESS_SELF_OATH_TIP or L.BLESS_SELF_WHEEL_TIP })
     end)
+    -- oath: wheel = next player (tanks first)
+    if kind == "oath" then
+        b:EnableMouseWheel(true)
+        b:SetScript("OnMouseWheel", function(self, delta)
+            if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
+            local list = Bar.OathTargets()
+            if #list == 0 then return end
+            local pos = 0
+            for i, t in ipairs(list) do if t.key == opt().oathTarget then pos = i end end
+            pos = ((pos - 1 + (delta < 0 and 1 or -1)) % #list) + 1
+            opt().oathTarget = list[pos].key
+            Bar.Update()
+            if self:IsMouseOver() then self:GetScript("OnEnter")(self) end
+        end)
+    end
     -- mouse wheel: next / previous aura or seal you know (secure attributes: outside of combat)
-    if kind ~= "fury" then
+    if kind == "aura" or kind == "seal" then
         b:EnableMouseWheel(true)
         b:SetScript("OnMouseWheel", function(self, delta)
             if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
@@ -516,6 +582,14 @@ local function makeSelfButton(kind)
     b:HookScript("PostClick", function(self, mouse, down)
         if down or mouse ~= "RightButton" or inCombat() then return end
         if kind == "fury" then return end
+        if kind == "oath" then
+            local items = { { value = "target", text = Theme.HexColor("muted", L.BLESS_OATH_YOUR_TARGET) } }
+            for _, t in ipairs(Bar.OathTargets()) do
+                items[#items + 1] = { value = t.key, text = ns.ColorName(t.m.name, t.m.class) .. Theme.HexColor("muted", "  " .. (L["BLESS_TYPE_" .. t.kind:upper()] or t.kind)) }
+            end
+            UI.OpenMenu(self, items, function(v) opt().oathTarget = v ~= "target" and v or nil; Bar.Update() end, 220, opt().oathTarget or "target")
+            return
+        end
         local items = Bar.SelfChoices(kind == "aura" and Bar.AURAS or Bar.SEALS)
         UI.OpenMenu(self, items, function(v) opt()[kind .. "Spell"] = v; Bar.Update() end, 200, opt()[kind .. "Spell"])
     end)
@@ -552,13 +626,9 @@ local function create()
     smart.tip, smart.tipLines = L.BLESS_SMART, { L.BLESS_SMART_TIP_SHORT }
     frame.smart = smart
     local lock = ns.Movers.LockButton("blessingsBar", frame, head, 22)
-    lock:SetPoint("LEFT", smart, "RIGHT", 3, 0)
-    frame.nextIcon = head:CreateTexture(nil, "ARTWORK")
-    frame.nextIcon:SetSize(22, 22)
-    frame.nextIcon:SetPoint("RIGHT")
-    frame.nextIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    lock:SetPoint("RIGHT")   -- top right corner
 
-    for _, kind in ipairs({ "aura", "seal", "fury" }) do makeSelfButton(kind) end
+    for _, kind in ipairs({ "aura", "seal", "fury", "oath" }) do makeSelfButton(kind) end
 
     -- cast the next missing blessing (secure); right click: smart assign
     auto = CreateFrame("Button", "LiebeGruesseBlessAuto", frame, "SecureActionButtonTemplate, BackdropTemplate")
@@ -691,7 +761,7 @@ local function paintPlayer(b)
     if not m then return end
     if not ns.SetSpecIcon(b.spec, m.class, ns.SpecPoints(ns.Database.Member(b.key))) then ns.SetClassIcon(b.spec, m.class) end
     b.bless:SetTexture(b.blessing and B.Icon(b.blessing) or nil)
-    local name = ns.Names.Display(m.name):match("^(%S+)") or m.name
+    local name = ns.Names.Display(m.name) or m.name   -- full name (two "Salty"s stay apart)
     local cr, cg, cb = ns.ClassColor(m.class)
     local has, left, est = false, nil, false
     if b.blessing then has, left, est = B.SingleState(b.key, b.blessing) end
@@ -764,7 +834,28 @@ local function furyName()
     return FURY_NAMES[1]
 end
 -- self buff buttons (aura / seal / fury): which one, cast attributes, green while on
+local function paintOath(b, combat)
+    local name, id, known = Bar.OathSpell()
+    if not known and not B.test then return false end
+    local key = opt().oathTarget
+    local m = key and B.members[key]
+    local unit = m and m.unit or "target"
+    b.spell = name
+    b.active = m and readOath(not combat and m.unit or nil, key, name) or false
+    b.icon:SetTexture((C_Spell and C_Spell.GetSpellTexture and ns.Call(C_Spell.GetSpellTexture, id)) or (GetSpellTexture and ns.Call(GetSpellTexture, id)) or 135981)
+    b.label:SetText(m and ns.ColorName(m.name, m.class) or (name .. Theme.HexColor("muted", " · " .. L.BLESS_OATH_YOUR_TARGET)))
+    if m then
+        b.state:SetText(b.active and Theme.HexColor("good", L.BLESS_SELF_ON_SHORT) or Theme.HexColor("bad", L.BLESS_SELF_OFF_SHORT))
+        tint(b.bg, b.active and 1 or 0, 1, true)
+    else
+        b.state:SetText("")
+        tint(b.bg, 0, 1, false)
+    end
+    if not combat then setSecure(b, { type1 = "spell", spell1 = name, unit1 = unit }) end
+    return true
+end
 local function paintSelf(kind, b, combat)
+    if kind == "oath" then return paintOath(b, combat) end
     local ids = choice(kind)
     local id = ids and knownId(ids)
     local name = id and B.SpellName(id)
@@ -829,9 +920,11 @@ function Bar.Update()
     local solo = not IsInGroup() and not B.test
     local y = HEAD_H + 4
     -- self buffs on top
-    for _, kind in ipairs({ "aura", "seal", "fury" }) do
+    for _, kind in ipairs({ "aura", "seal", "fury", "oath" }) do
         local b = selfButtons[kind]
-        local on = o[kind] == true and B.IsPaladin() or (B.test and o[kind] == true)
+        local want = o[kind] == true
+        if kind == "oath" then want = o.oath ~= false end   -- on by default, shown only when known
+        local on = want and B.IsPaladin() or (B.test and want)
         if on and paintSelf(kind, b, false) then
             b:ClearAllPoints(); b:SetPoint("TOPLEFT", 4, -y); b:Show()
             y = y + ROW_H - 2
@@ -942,8 +1035,6 @@ function Bar.Update()
     end
     frame:SetHeight(y + 2)
     frame:Show()
-    frame.nextIcon:SetTexture(nextCast and B.Icon(nextCast.blessing) or nil)
-    frame.nextIcon:SetShown(nextCast ~= nil)
 end
 
 function Bar.Shown() return frame ~= nil and frame:IsShown() end

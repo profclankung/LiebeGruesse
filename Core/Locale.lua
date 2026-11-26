@@ -1111,4 +1111,17 @@ local enUS18 = {
 }
 for k, v in pairs(enUS18) do enUS[k] = v end
 
+-- singles for other paladins from the grid (1.0.87, Ben)
+local enUS19 = {
+    BLESS_FLY_LINE_TIP = "Wheel: %s's single · Click: choose · Right: remove",
+    BLESS_PLAYERS_HINT = "Wheel: your single · Click: choose · Right: none. Hover a paladin's cell for his players.",
+    BLESS_CELL_TIP = "Click: choose · Wheel: change · Shift + wheel: whole row · Right: remove · Players below: wheel = this paladin's single",
+    BLESS_ROW_TIP = "Left: greater · Right: normal · Wheel: change · Shift + wheel: every class",
+    BLESS_SELF_OATH = "Oath of Light", BLESS_SELF_OATH_OPT = "Oath of Light button",
+    BLESS_SELF_OATH_OPT_TIP = "Shown when you know Oath of Light: casts it on the player you chose (tanks first), green while he has it. Mouse wheel or right-click picks the player.",
+    BLESS_SELF_OATH_TIP = "Click: cast on him · Wheel / Right: choose the player",
+    BLESS_OATH_YOUR_TARGET = "your target",
+}
+for k, v in pairs(enUS19) do enUS[k] = v end
+
 for k, v in pairs(enUS) do L[k] = v end

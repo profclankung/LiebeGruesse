@@ -229,6 +229,18 @@ local GROUPS = {
           run = function() if ns.BlessNative then ns.Print(ns.BlessNative.Report()) end end },
         { cmd = "test blessspells", desc = "Blessings: which normal and greater blessings you know (by id or by name) and which spell ids were learned from buffs",
           run = function() ns.Blessings.SpellReport() end },
+        { cmd = "test blessoath", desc = "Blessing bar: whether you know Oath of Light (by id or by name), on whom the button casts it and whether he has it",
+          run = function() ns.BlessingsBar.OathReport() end },
+        { cmd = "test blessflyout", desc = "Blessings quick window with made-up raiders: the warrior cell of another paladin unfolds its players (wheel = his single, Shift + wheel on a cell = whole row)",
+          run = function()
+              local B = ns.Blessings
+              B.Test(); ns.BlessAssign.Show()
+              for _, r in ipairs(ns.BlessAssign.rows or {}) do
+                  for _, c in ipairs(r.cells or {}) do
+                      if c.class == "WARRIOR" and c.p and not c.p.me and c:IsShown() then ns.BlessPlayers.ShowFly(c); return end
+                  end
+              end
+          end },
         { cmd = "test blessspec", desc = "Blessings: what every group member plays (talents, group role or class), which blessings he wants and what you give him",
           run = function() ns.Blessings.SpecReport() end },
         { cmd = "test blesswindow", desc = "Blessings quick assign window with made-up paladins and raiders (3 min, nothing is sent or cast)",

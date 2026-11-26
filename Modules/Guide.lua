@@ -141,7 +141,7 @@ Guide.LIST = {
       sum = "Plan paladin blessings per class, see missing buffs live and cast with one click.",
       steps = {
           { "Plan", "Grid of paladins × classes. “Smart assign” fills everything from what each player plays (talents, group role, class); the mouse wheel changes a blessing." },
-          { "Single", "Players who want something else than their class get a single blessing: a feral druid Might among restoration druids, a tank Sanctuary. Set by hand on bar, quick window or page – smart assign keeps it." },
+          { "Single", "Players who want something else than their class get a single blessing: a feral druid Might among restoration druids. Set by hand on bar, quick window or page – smart assign keeps it." },
           { "Sync", "Assignments sync with other addon users and with PallyPower guests – both ways, as leader also for them." },
           { "Cast", "The bar: a button per class (green / yellow / red), hover pops out its players; “Cast next” = next missing blessing. Quick assign window: /lg assign." },
       },

@@ -13,11 +13,12 @@ local P = ns.BlessPlayers
 local A = {}
 ns.BlessAssign = A
 
-local NAME_W, COL_W, ROW_H, HEAD_H = 176, 80, 48, 92
-local CELL_TOP = 44            -- single lines start below icon and count
+local NAME_W, COL_W, ROW_H, HEAD_H = 176, 108, 60, 92
+local CELL_TOP = 46            -- single lines start below icon and count
 local frame
 local cells, rowsUI, heads = {}, {}, {}
 local playerUI = {}            -- [class index] = { player buttons }
+A.rows = rowsUI                -- (tests)
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() end
 local function blessIcon(b, size)
@@ -64,9 +65,9 @@ local function cell(r, i)
     c:SetScript("OnMouseWheel", function(self, delta)
         if not self.p then return end
         if not B.CanEdit(self.p) then ns.Print(L.BLESS_CANT_EDIT); return end
-        B.Cycle(self.p, self.class, delta)
+        B.WheelClass(self.p, self.class, delta)
         A.Draw()
-        if self:IsMouseOver() then self:GetScript("OnEnter")(self) end
+        P.Retip()
     end)
     c:SetScript("OnEnter", function(self)
         if not self.p then return end
@@ -81,9 +82,12 @@ local function cell(r, i)
         end
         -- (no blank line: short tooltips)
         lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
-        UI.Tooltip(self, (b and B.Name(b) or L.BLESS_NONE) .. " · " .. ns.ClassName(self.class), lines)
+        -- above the cell: below it unfold his players of this class
+        P.hover = self
+        P.Tip(self, (b and B.Name(b) or L.BLESS_NONE) .. " · " .. ns.ClassName(self.class), lines, "ANCHOR_TOP")
+        P.ShowFly(self)
     end)
-    c:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    c:SetScript("OnLeave", P.Unhover)
     r.cells[i] = c
     return c
 end
@@ -100,8 +104,9 @@ local function paladinRow(i)
     r.name:SetWordWrap(false)
     r.sub = UI.Text(r, 10, "muted")
     r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -3)
+    -- known blessings below "You" (never on top of it)
     r.skills = UI.Text(r, 10, "text")
-    r.skills:SetPoint("BOTTOMLEFT", 10, 6)
+    r.skills:SetPoint("TOPLEFT", r.sub, "BOTTOMLEFT", 0, -5)
     r.cells = {}
     rowsUI[i] = r
     return r
@@ -301,6 +306,8 @@ function A.Draw()
     frame.empty:SetText(IsInGroup() and L.BLESS_NO_PALADINS or L.BLESS_NO_GROUP)
     if #pals == 0 then y = y + 50 end
     frame:SetHeight(y + 56)
+    P.UpdateFly()
+    P.Retip()
 end
 
 function A.Show()

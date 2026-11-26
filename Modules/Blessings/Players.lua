@@ -7,13 +7,17 @@
 --   lines in a paladin's cell: "icon Name" for every single blessing that
 --   paladin gives in this class (instead of his class blessing) – the same
 --   wheel / click / right click.
+--   hovering a paladin's cell unfolds every player of that class below it:
+--   mouse wheel on a name = THAT paladin's single blessing for him.
+--   Tooltips sit beside the list (never over the icons) and follow every change.
 local _, ns = ...
 local UI, Theme, L, Names = ns.UI, ns.Theme, ns.L, ns.Names
 local B = ns.Blessings
 local P = {}
 ns.BlessPlayers = P
 
-P.LINE_H = 15
+P.LINE_H = 20
+P.FONT, P.ICON = 12, 16
 P.buttons, P.lines = {}, {}   -- every player button / cell line made so far (reused, never many)
 
 local function icon(b, size)
@@ -22,6 +26,31 @@ end
 P.IconText = icon
 local function first(name) return (Names.Display(name or ""):match("^(%S+)")) or name or "?" end
 P.First = first
+-- full names everywhere (two "Salty"s in one raid must stay apart)
+local function full(name) return Names.Display(name or "") or name or "?" end
+P.Full = full
+
+-- tooltips beside the owner, not at the cursor: the cursor tooltip covered
+-- the blessing icons it explains. P.hover = owner, redrawn after each change.
+local function tipAt(owner, anchor)
+    ns.TipOwner(owner, anchor or "ANCHOR_RIGHT", true)
+end
+P.TipAt = tipAt
+function P.Tip(owner, title, lines, anchor)
+    tipAt(owner, anchor)
+    local tr, tg, tb = Theme.Color("text")
+    GameTooltip:SetText(title or "", tr, tg, tb)
+    local r, g, b = Theme.Color("textDim")
+    for _, line in ipairs(lines or {}) do GameTooltip:AddLine(line, r, g, b, true) end
+    GameTooltip:Show()
+end
+function P.Hover(self) P.hover = self end
+function P.Unhover(self) if P.hover == self then P.hover = nil end; GameTooltip:Hide() end
+-- the tooltip of whatever is under the mouse again (after a wheel / click)
+function P.Retip()
+    local h = P.hover
+    if h and h:IsShown() and h:IsVisible() and h:GetScript("OnEnter") then h:GetScript("OnEnter")(h) end
+end
 
 -- players of a class in group order: { key, ... }
 function P.ClassPlayers(class)
@@ -44,6 +73,8 @@ local function refresh()
     if ns.BlessAssign and ns.BlessAssign.Shown() then ns.BlessAssign.Draw() end
     if ns.Window.IsShown("blessings") and B.PageDraw then B.PageDraw() end
     if P.picker and P.picker:IsShown() then P.picker.Draw() end
+    P.UpdateFly()
+    P.Retip()
 end
 P.Refresh = refresh
 
@@ -61,7 +92,7 @@ end
 function P.TipLines(key, class)
     local lines = {}
     for _, g in ipairs(B.GivenTo(key, class)) do
-        local text = Theme.HexColor("muted", first(g.p.name or g.p.key) .. ": ") .. icon(g.blessing, 14) .. " " .. (B.Name(g.blessing) or "")
+        local text = Theme.HexColor("muted", full(g.p.name or g.p.key) .. ": ") .. icon(g.blessing, 14) .. " " .. (B.Name(g.blessing) or "")
         if g.single then
             text = text .. Theme.HexColor("accent", "  " .. (g.classB and L.BLESS_TIP_INSTEAD_OF:format(B.Name(g.classB)) or L.BLESS_TIP_SINGLE_SHORT))
         end
@@ -71,10 +102,10 @@ function P.TipLines(key, class)
     return lines
 end
 
-local function tooltip(owner, key, extra)
+local function tooltip(owner, key, extra, anchorTo, anchor)
     local m = B.members[key]
     if not m then return end
-    ns.TipOwner(owner, "ANCHOR_RIGHT")
+    tipAt(anchorTo or owner, anchor)
     local cr, cg, cb = ns.ClassColor(m.class)
     GameTooltip:SetText(m.name, cr, cg, cb)
     for _, line in ipairs(P.TipLines(key, m.class)) do GameTooltip:AddLine(line, 1, 1, 1) end
@@ -119,14 +150,15 @@ local function pickIcon(row, i)
         if self.value == "none" then
             title, lines = L.BLESS_PICK_REMOVE, { self.classB and L.BLESS_SINGLE_CLASS:format(B.Name(self.classB)) or L.BLESS_SINGLE_REMOVE }
         elseif self.value == self.classB then
-            title, lines = B.Name(self.value), { L.BLESS_PICK_CLASS_TIP:format(first(self.p.name or self.p.key)) }
+            title, lines = B.Name(self.value), { L.BLESS_PICK_CLASS_TIP:format(full(self.p.name or self.p.key)) }
         else
             title, lines = B.Name(self.value), { self.classB and L.BLESS_TIP_INSTEAD_OF:format(B.Name(self.classB)) or L.BLESS_TIP_SINGLE_SHORT }
         end
         if not B.CanEdit(self.p) then lines[#lines + 1] = L.BLESS_CANT_EDIT end
-        UI.Tooltip(self, title, lines)
+        P.hover = self
+        P.Tip(self, title, lines, "ANCHOR_TOP")
     end)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnLeave", P.Unhover)
     b:EnableMouseWheel(true)
     b:SetScript("OnMouseWheel", function(self, delta) local r = self:GetParent(); r:GetScript("OnMouseWheel")(r, delta) end)
     row.icons[i] = b
@@ -259,6 +291,7 @@ function P.Picker(anchor, key)
     f.key = key
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    if P.fly then P.fly:Hide() end
     f.catcher:Show()
     f:Show()
     f.Draw()
@@ -287,18 +320,18 @@ function P.Button(parent)
     b.hl = UI.Fill(b, "hover", "HIGHLIGHT"); b.hl:SetAllPoints()
     b.mark = UI.Fill(b, "accent", "ARTWORK")
     b.mark:SetPoint("TOPLEFT"); b.mark:SetPoint("BOTTOMLEFT"); b.mark:SetWidth(2)
-    b.spec = b:CreateTexture(nil, "ARTWORK"); b.spec:SetSize(12, 12); b.spec:SetPoint("LEFT", 4, 0)
-    b.icons = UI.Text(b, 10, "text", "RIGHT")
+    b.spec = b:CreateTexture(nil, "ARTWORK"); b.spec:SetSize(P.ICON, P.ICON); b.spec:SetPoint("LEFT", 4, 0)
+    b.icons = UI.Text(b, P.FONT, "text", "RIGHT")
     b.icons:SetPoint("RIGHT", -2, 0)
-    b.name = UI.Text(b, 10, "text")
-    b.name:SetPoint("LEFT", b.spec, "RIGHT", 3, 0)
-    b.name:SetPoint("RIGHT", b.icons, "LEFT", -1, 0)
+    b.name = UI.Text(b, P.FONT, "text")
+    b.name:SetPoint("LEFT", b.spec, "RIGHT", 4, 0)
+    b.name:SetPoint("RIGHT", b.icons, "LEFT", -2, 0)
     b.name:SetWordWrap(false)
     b:SetScript("OnClick", playerClick)
     b:EnableMouseWheel(true)
     b:SetScript("OnMouseWheel", playerWheel)
-    b:SetScript("OnEnter", function(self) if self.key then tooltip(self, self.key) end end)
-    b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    b:SetScript("OnEnter", function(self) if self.key then P.hover = self; tooltip(self, self.key) end end)
+    b:SetScript("OnLeave", P.Unhover)
     P.buttons[#P.buttons + 1] = b
     -- key: player; returns whether he has a single blessing from anyone
     function b:Set(key, query)
@@ -308,13 +341,18 @@ function P.Button(parent)
         self.class = m.class
         if not ns.SetSpecIcon(self.spec, m.class, ns.SpecPoints(ns.Database.Member(key))) then ns.SetClassIcon(self.spec, m.class) end
         local cr, cg, cb = ns.ClassColor(m.class)
-        local text = ns.Hex(cr, cg, cb, first(m.name))
+        local text = ns.Hex(cr, cg, cb, full(m.name))
         self.name:SetText(query and ns.Highlight(text, query) or text)
         local icons = {}
         for _, g in ipairs(B.GivenTo(key, m.class)) do
-            if g.single and #icons < 3 then icons[#icons + 1] = icon(g.blessing, 11) end
+            if g.single and #icons < 2 then icons[#icons + 1] = icon(g.blessing, P.ICON) end
         end
+        -- no single: the name gets the whole width (no empty icon slot)
         self.icons:SetText(table.concat(icons, ""))
+        self.icons:SetShown(#icons > 0)
+        self.name:ClearAllPoints()
+        self.name:SetPoint("LEFT", self.spec, "RIGHT", 4, 0)
+        if #icons > 0 then self.name:SetPoint("RIGHT", self.icons, "LEFT", -2, 0) else self.name:SetPoint("RIGHT", self, "RIGHT", -2, 0) end
         self.mark:SetShown(#icons > 0)
         self:Show()
         return #icons > 0
@@ -333,7 +371,7 @@ local function lineButton(cell, i)
     l:SetHeight(P.LINE_H - 1)
     l:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     l.hl = UI.Fill(l, "hover", "HIGHLIGHT"); l.hl:SetAllPoints()
-    l.text = UI.Text(l, 10, "text")
+    l.text = UI.Text(l, P.FONT, "text")
     l.text:SetPoint("LEFT", 2, 0)
     l.text:SetPoint("RIGHT", -1, 0)
     l.text:SetWordWrap(false)
@@ -348,8 +386,13 @@ local function lineButton(cell, i)
         if not self.p or not self.key then return end
         P.Cycle(self.key, delta, self.p)
     end)
-    l:SetScript("OnEnter", function(self) if self.key then tooltip(self, self.key, L.BLESS_SINGLE_LINE_TIP) end end)
-    l:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    l:SetScript("OnEnter", function(self)
+        if not self.key then return end
+        P.hover = self
+        tooltip(self, self.key, L.BLESS_SINGLE_LINE_TIP)
+        if self:GetParent().p then P.ShowFly(self:GetParent()) end
+    end)
+    l:SetScript("OnLeave", P.Unhover)
     cell.lines[i] = l
     P.lines[#P.lines + 1] = l
     return l
@@ -367,11 +410,165 @@ function P.CellLines(cell, p, class, y, query)
         l:SetPoint("TOPRIGHT", cell, "TOPRIGHT", -1, -(y + (i - 1) * P.LINE_H))
         local cr, cg, cb = ns.ClassColor(s.member.class)
         local has = B.SingleState(s.key, s.blessing)
-        local name = ns.Hex(cr, cg, cb, first(s.member.name))
-        l.text:SetText(icon(s.blessing, 11) .. " " .. (query and ns.Highlight(name, query) or name))
+        local name = ns.Hex(cr, cg, cb, full(s.member.name))
+        l.text:SetText(icon(s.blessing, P.ICON) .. " " .. (query and ns.Highlight(name, query) or name))
         l:SetAlpha(has and 1 or 0.8)
         l:Show()
     end
     for i = #list + 1, #(cell.lines or {}) do cell.lines[i]:Hide(); cell.lines[i].key = nil end
     return #list
+end
+
+---------------------------------------------------------------------------
+-- Cell flyout: hovering a paladin's cell unfolds every player of that class
+-- below it. Mouse wheel on a name = this paladin's single blessing for him
+-- (back to his class blessing is part of the cycle), click = picker,
+-- right click = remove this paladin's single. Hides once the mouse leaves
+-- cell and list; checks only while it is shown.
+---------------------------------------------------------------------------
+local FLY_W, FLY_HEAD = 200, 24
+local function flyLine(f, i)
+    local l = f.lines[i]
+    if l then return l end
+    l = CreateFrame("Button", nil, f)
+    l:SetHeight(P.LINE_H)
+    l:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    l.hl = UI.Fill(l, "hover", "HIGHLIGHT"); l.hl:SetAllPoints()
+    l.mark = UI.Fill(l, "accent", "ARTWORK")
+    l.mark:SetPoint("TOPLEFT"); l.mark:SetPoint("BOTTOMLEFT"); l.mark:SetWidth(2)
+    l.icon = l:CreateTexture(nil, "ARTWORK")
+    l.icon:SetSize(P.ICON, P.ICON)
+    l.icon:SetPoint("LEFT", 6, 0)
+    l.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    l.dash = UI.Text(l, P.FONT, "borderDim", "CENTER")
+    l.dash:SetPoint("CENTER", l.icon, "CENTER", 0, 0)
+    l.dash:SetText("—")
+    l.dot = UI.Fill(l, "good", "ARTWORK")
+    l.dot:SetSize(6, 6)
+    l.dot:SetPoint("RIGHT", -6, 0)
+    l.name = UI.Text(l, P.FONT, "text")
+    l.name:SetPoint("LEFT", l.icon, "RIGHT", 6, 0)
+    l.name:SetPoint("RIGHT", l.dot, "LEFT", -4, 0)
+    l.name:SetWordWrap(false)
+    l:SetScript("OnClick", function(self, mouse)
+        local p = P.fly and P.fly.p
+        if not p or not self.key then return end
+        if mouse == "RightButton" then
+            if not B.CanEdit(p) then ns.Print(L.BLESS_CANT_EDIT); return end
+            if p.single and p.single[self.key] then B.SetSingle(p, self.key, nil); refresh() end
+        else
+            P.Picker(self, self.key)
+        end
+    end)
+    l:EnableMouseWheel(true)
+    l:SetScript("OnMouseWheel", function(self, delta)
+        local p = P.fly and P.fly.p
+        if not p or not self.key then return end
+        P.Cycle(self.key, delta, p)
+    end)
+    l:SetScript("OnEnter", function(self)
+        local p = P.fly and P.fly.p
+        if not self.key or not p then return end
+        P.hover = self
+        -- beside the list, so neither icons nor names are covered
+        tooltip(self, self.key, L.BLESS_FLY_LINE_TIP:format(full(p.name or p.key)), P.fly, "ANCHOR_RIGHT")
+    end)
+    l:SetScript("OnLeave", P.Unhover)
+    f.lines[i] = l
+    return l
+end
+
+local function makeFly()
+    local f = UI.Panel(UIParent, "panel", "border")
+    f:SetFrameStrata("FULLSCREEN")
+    f:SetToplevel(true)
+    f:SetClampedToScreen(true)
+    f:EnableMouse(true)
+    f:SetWidth(FLY_W)
+    _G.LiebeGruesseBlessCellFly = f
+    f.title = UI.Text(f, 11, "muted")
+    f.title:SetPoint("TOPLEFT", 8, -7)
+    f.title:SetPoint("TOPRIGHT", -8, -7)
+    f.title:SetWordWrap(false)
+    f.lines = {}
+    f.elapsed = 0
+    f:SetScript("OnUpdate", function(self, el)
+        self.elapsed = self.elapsed + el
+        if self.elapsed < 0.1 then return end
+        self.elapsed = 0
+        local c = self.cell
+        if not c or not c:IsVisible() then self:Hide(); return end
+        if not (self:IsMouseOver() or c:IsMouseOver()) then self:Hide() end
+    end)
+    f:SetScript("OnHide", function(self) self.cell, self.p = nil, nil end)
+
+    function f.Draw()
+        local c, p = f.cell, f.p
+        if not c or not p or not c.class then f:Hide(); return end
+        local class = c.class
+        local list = P.ClassPlayers(class)
+        if #list == 0 then f:Hide(); return end
+        local classB = p.set and p.set[class]
+        local cr, cg, cb = ns.ClassColor(class)
+        f.title:SetText(ns.ColorName(full(p.name or p.key), "PALADIN") .. Theme.HexColor("muted", "  ›  ") .. ns.Hex(cr, cg, cb, ns.ClassName(class)))
+        local y = FLY_HEAD
+        for i, key in ipairs(list) do
+            local m = B.members[key]
+            local l = flyLine(f, i)
+            l.key = key
+            l:ClearAllPoints()
+            l:SetPoint("TOPLEFT", 2, -y)
+            l:SetPoint("TOPRIGHT", -2, -y)
+            local single = p.single and p.single[key]
+            local b = single or classB
+            if b then
+                l.icon:SetTexture(B.Icon(b)); l.icon:Show(); l.dash:Hide()
+                l.icon:SetDesaturated(false)
+                local has = B.SingleState(key, b)
+                l.dot:SetColorTexture(Theme.Color(has and "good" or "bad"))
+                l.dot:Show()
+            else
+                l.icon:Hide(); l.dash:Show(); l.dot:Hide()
+            end
+            l.mark:SetShown(single ~= nil)
+            local mr, mg, mb = ns.ClassColor(m and m.class or class)
+            l.name:SetText(ns.Hex(mr, mg, mb, full(m and m.name or key)))
+            l:SetAlpha(B.CanEdit(p) and 1 or 0.6)
+            l:Show()
+            y = y + P.LINE_H
+        end
+        for i = #list + 1, #f.lines do f.lines[i]:Hide(); f.lines[i].key = nil end
+        f:SetWidth(math.max(FLY_W, (c:GetWidth() or 0)))
+        f:SetHeight(y + 6)
+    end
+    f:Hide()
+    return f
+end
+
+-- cell: needs .p (paladin) and .class
+function P.ShowFly(cell)
+    if not cell or not cell.p or not cell.class then return end
+    if P.picker and P.picker:IsShown() then return end
+    if #P.ClassPlayers(cell.class) == 0 then if P.fly then P.fly:Hide() end; return end
+    P.fly = P.fly or makeFly()
+    local f = P.fly
+    if f.cell ~= cell or f.p ~= cell.p or not f:IsShown() then
+        f.cell, f.p = cell, cell.p
+        f:ClearAllPoints()
+        -- overlaps the cell by 2 px: the mouse never crosses a gap
+        f:SetPoint("TOPLEFT", cell, "BOTTOMLEFT", 0, 2)
+        f.elapsed = 0
+        f:Show()
+    end
+    f.Draw()
+end
+
+-- after a redraw of a window: the cell may now show another paladin
+function P.UpdateFly()
+    local f = P.fly
+    if not f or not f:IsShown() then return end
+    local c = f.cell
+    if not c or not c:IsVisible() or not c.p then f:Hide(); return end
+    f.p = c.p
+    f.Draw()
 end
