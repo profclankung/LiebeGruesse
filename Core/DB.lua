@@ -67,15 +67,6 @@ function Database.Init()
         if st.cd.clickWhisper == false then st.cd.clickLeft = "none" end
     end
     if not st.neckMigrated then st.neckMigrated = true; st.enchantSlots[2] = true end
-    -- 1.0.78: the dungeon page is gone – drop its data (marks, guild chat, posts)
-    st.dungeons = nil
-    if type(st.modules) == "table" then st.modules.dungeons = nil end
-    for _, g in pairs(ns.db.guilds or {}) do
-        if type(g) == "table" then g.dungeons, g.dungeonChat = nil, nil end
-    end
-    for _, c in pairs(ns.db.chars or {}) do
-        if type(c) == "table" then c.dungeonPost = nil end
-    end
     ns.Theme.Load()
 end
 

@@ -880,6 +880,62 @@ local enUS11 = {
 }
 for k, v in pairs(enUS11) do enUS[k] = v end
 
+-- Dungeon interest (Modules/Dungeons.lua)
+local enUS12 = {
+    PAGE_DUNGEONS = "Dungeons", MOD_DUNGEONS_TEXT = "Mark the dungeons you want to run – the guild sees who wants what.",
+    DG_TAB_FIND = "Who wants to go", DG_TAB_MINE = "My interest", DG_SEARCH = "Search dungeon, player or item…",
+    DG_TANK = "Tank", DG_HEAL = "Healer", DG_DPS = "DPS",
+    DG_ONLINE_TIP = "Only players who are online right now.",
+    DG_FITS = "Fits my level", DG_FITS_TIP = "Only dungeons that suit your character's level.",
+    DG_COL_DUNGEON = "Dungeon", DG_COL_WANT = "Want", DG_COL_ROLE = "Role", DG_COL_ITEMS = "Wanted items",
+    DG_COL_NOTE = "Note", DG_COL_SINCE = "Marked", DG_COL_EXPIRES = "Expires",
+    DG_TIP_LEVEL = "Level %s", DG_TIP_COUNT = "%d interested, %d online", DG_LEVEL_RANGE = "Level %s",
+    DG_MARK = "I want to go", DG_UNMARK = "Not interested", DG_EDIT = "Edit",
+    DG_WHISPER = "Whisper", DG_INVITE = "Invite to group", DG_ARMORY = "Open in roster",
+    DG_WHISPER_TEXT = "Hi! You marked %s in Liebe Grüße – want to go? ",
+    DG_TIP_MAIN = "Main role: %s", DG_TIP_OFF = "Off spec: %s",
+    DG_CLASH = "also wanted by others", DG_ALSO_WANTS = "also: %s", DG_CLASHES = "%d wanted item(s) overlap",
+    DG_ROW_TIP = "Click: whisper · Right-click: invite, roster", DG_ROW_TIP_ME = "That is you – edit it under “My interest”.",
+    DG_TEST = "test", DG_TEST_ROW = "That is a test player – nothing is sent.",
+    DG_TEST_START = "Dungeon interest with made-up members for 3 minutes (only for you, nothing is sent or stored).",
+    DG_EMPTY = "Nobody has marked this dungeon yet.", DG_EMPTY_ONLINE = "Nobody online wants this dungeon right now.",
+    DG_EMPTY_HINT = "Be the first: “I want to go” at the top right.",
+    DG_TOGGLE_TIP = "Interested in this dungeon",
+    DG_RENEW_ALL = "Renew all", DG_RENEW_ALL_TIP = "All your marks count again from today.",
+    DG_KEEP_FOR = "New marks last", DG_DAYS = "%d days",
+    DG_EDIT_HINT = "You have not marked this dungeon. Switch it on in the list or here – then pick your roles, a note and the items you hope for.",
+    DG_MAIN_ROLE = "Main role", DG_OFF_SPEC = "Off spec", DG_OFF_NONE = "Your class has no other role.",
+    DG_NOTE_HINT = "e.g. need the quest, only full clears…",
+    DG_ADD_ITEM = "Add item", DG_ADD_WAIT = "Shift-click item…",
+    DG_ADD_HINT = "Or: drop an item on “Add item”, or click it and then shift-click an item (bags, chat, loot addon). Right-click an icon removes it.",
+    DG_FIND_HINT = "Item ID or name, then Enter…",
+    -- chat answers: plain ASCII only (the chat server is picky about special characters)
+    DG_ANSWER = "%s: %d want to go - %s",
+    DG_ANSWER_NONE = "%s: nobody has marked it yet - mark it with /lg lfg",
+    DG_ANSWER_CHAT = "asked in chat",
+    DG_ASK_UNKNOWN = "No dungeon called \"%s\" - try e.g. !lfg scholo, or !lfg for the list",
+    DG_TOP = "Most wanted dungeons: %s - ask !lfg <dungeon> for names",
+    DG_TOP_NONE = "Nobody has marked a dungeon yet - mark one with /lg lfg",
+    DG_ASK_STATUS = "!lfg answers on: %s · automatic chat now: %s – details: /lg test chat",
+    DG_ANSWER_ON = "Answer !lfg",
+    DG_ANSWER_ON_TIP = "Someone writes \"!lfg scholo\" in guild chat (or \"!lfg\" for the list): exactly one addon user answers who wants to go. Your client may be that one.",
+    DG_FIND_NONE = "No known item matches “%s”. Names only work for items the game has seen (guild gear, loot, your bags) – the item ID always works.",
+    DG_FIND_BAD_ID = "There is no item with the ID %s.",
+    DG_ITEM_REMOVE_TIP = "Right-click: remove from your list",
+    DG_ITEMS_FULL = "At most %d wanted items per dungeon.",
+    DG_GOT_ITEM = "You have %s now – removed from your wanted items for %s.",
+    DG_RENEW = "Renew", DG_REMOVE = "Remove mark", DG_SINCE = "marked %s",
+    DG_IN_DAYS = "%d d left", DG_IN_HOURS = "%d h left",
+    DG_UNKNOWN = "No dungeon matches “%s”.",
+    DG_FOREVER = "Forever", DG_FOREVER_TIP = "New dungeon of WoW Forever",
+    DG_CHAT_TAG = "chat", DG_ROLE_UNKNOWN = "role?",
+    DG_TIP_CHAT = "Asked in guild chat – shown for a short time (%s).",
+    DG_CHAT_PICKUP = "Pick up guild chat (%d h)",
+    DG_CHAT_PICKUP_TIP = "Someone asks for a dungeon in guild chat (\"LFG Strat UD\", \"wer kommt mit scholo?\") – they show up here for a short time, also without the addon. Your own message makes a short mark of yours.",
+    DG_CHAT_TEST = "What the addon reads from guild chat messages (a hit counts %d h, nothing stored):",
+    DG_CHAT_NONE = "nothing (no dungeon or no group search)",
+}
+for k, v in pairs(enUS12) do enUS[k] = v end
 
 -- Search (two-line results) and chat diagnostics
 local enUS13 = {

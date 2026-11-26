@@ -2,6 +2,20 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [Unreleased]
+
+- feat(dungeons): new page Dungeons – mark the dungeons you want to run with main role, off spec, a note and up to six wanted items (/lg lfg)
+- feat(dungeons): "Who wants to go" lists everyone per dungeon with role, items and note; online only, fits my level; click whispers (text prepared, not sent), right-click invites
+- feat(dungeons): wanted items can be typed in – item ID or (part of) the name; several matches open a list to pick from (names known from guild gear, loot history, your bags and items seen this session)
+- feat(dungeons): wanted items show overlaps with other players of the same dungeon; items you get leave your list by themselves
+- feat(dungeons): marks run out after 14 days (7/30 selectable), "Renew" keeps them; synced to the guild on change and at login
+- feat(dungeons): the nine new Forever dungeons are in the list too (Hall of Thanes, Ruins of Lordaeron, Excavation Site: Wetlands, City of Dalaran, The Drowned City, Krol'dok Stronghold, Alcaz Prison, Blackmaw Hold, Shaper's Terrace), sorted by level and tagged "Forever"
+- feat(dungeons): asking in guild chat ("LFG Strat UD", "wer kommt mit scholo?", "LF1M heal BRD", common short names in English and German) puts the player on the list for 2 hours – also without the addon (tag "chat", role unknown, the message as note); trade messages are ignored; switch under My interest
+- feat(dungeons): your own chat message makes a short mark of yours that is synced; marking or editing it turns it into a normal mark
+- feat(dungeons): "!lfg <dungeon>" in guild chat or as a whisper ("!lfg ubrs", "!lfg strat ud", also short names like "!lfg zf") – exactly one addon user answers who wants to run it, online first with role; "!lfg" alone lists the most wanted dungeons; whoever asks counts as looking for a group too (2 h) and is part of the answer; own election (message kind DE); switch "Answer !lfg" under My interest
+- feat(dungeons): !lfg is answered the same way as !lg since 1.0.80 – addon users get the answer through the addon channel (chat window, guild colour, "[Post]" link, /lg post), players without the addon a guild chat line; a client that sent automatic lines lately or was blocked leaves the answer to others, and a second round follows after 5 s without an answer
+- feat(test): /lg test lfg with made-up members, /lg test lfgask [dungeon] shows the !lfg answer, /lg test lfgchat [text] shows what is read from a chat message, /lg test lfgdebug
+
 ## [1.0.84] – 2026-11-26
 
 - change(council): every member sees the loot council page again – the loot history and the council setup (who is on the council, rules, answer buttons) read-only; only the guild master, officers and the council can change it. Modules › Loot council can still hide the page for members

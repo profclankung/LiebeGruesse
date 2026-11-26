@@ -61,6 +61,7 @@ Modules\LootCouncil\Companion.lua
 Modules\Admin.lua
 Modules\TradeTimers.lua
 Modules\Attune.lua
+Modules\Dungeons.lua
 Modules\Blessings\Blessings.lua
 Modules\Blessings\Bar.lua
 Modules\Blessings\Native.lua
