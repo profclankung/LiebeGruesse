@@ -2,9 +2,13 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.86] – 2026-11-26
+
+- change(general): new release with the version number raised – the addon itself is unchanged since 1.0.84 (blessing bar, quick assign window, single blessings, smart assign by spec, Light and Sanctuary)
+
 ## [1.0.85] – 2026-11-26
 
-- change(general): version 1.0.85 – work after the 1.0.84 tag
+- change(general): version number raised only – no changes in the addon since 1.0.84
 
 ## [1.0.84] – 2026-11-26
 
