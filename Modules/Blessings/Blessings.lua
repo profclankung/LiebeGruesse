@@ -194,7 +194,12 @@ function B.Settings()
     s.blessings = s.blessings or {}
     local o = s.blessings
     local d = { bar = true, raidOnly = false, solo = true, scale = 1, freeAssign = false, ppRead = true, ppSync = true, live = true,
-        players = true, times = true, counts = true, side = "left", aura = true, seal = false, fury = false }
+        players = true, times = true, counts = true, side = "auto", aura = true, seal = false, fury = false, autoNew = true }
+    -- 1.0.87: "left" was the stored default; the new default opens toward the screen centre
+    if o.sideAuto == nil then
+        if o.side == "left" or o.side == nil then o.side = "auto" end
+        o.sideAuto = true
+    end
     for k, v in pairs(d) do if o[k] == nil then o[k] = v end end
     return o
 end
@@ -301,15 +306,22 @@ local function mine(p)
     p.single, p.pinned = ownSingles()
 end
 
+-- B.incomplete: a group member the game does not know yet (just joined: no
+-- class, name "Unknown") – the roster is read again a moment later
 function B.Rebuild()
     if B.test then return end
     wipe(classUnits)   -- (lastGood stays: it checks the GUID behind each unit)
     wipe(B.members); wipe(B.unitKey)
+    B.incomplete = false
     local seen = {}
     local me = Names.Me()
+    local unknown = UNKNOWNOBJECT or "Unknown"
+    local count = 0
     for unit, key, name in ns.GroupUnits() do
         local _, class = ns.Call(UnitClass, unit)
-        if class then
+        count = count + 1
+        if not class or name == unknown then B.incomplete = true end
+        if class and name ~= unknown then
             classUnits[class] = classUnits[class] or {}
             table.insert(classUnits[class], unit)
             addMember(unit, key, name, class)
@@ -330,9 +342,13 @@ function B.Rebuild()
         B.paladins[me] = p
         seen[me] = true
         local _, class = ns.Call(UnitClass, "player")
-        if class then classUnits[class] = classUnits[class] or { "player" } end
+        if class then
+            classUnits[class] = classUnits[class] or { "player" }
+            addMember("player", me, p.name, class)
+        end
     end
     for key in pairs(B.paladins) do if not seen[key] then B.paladins[key] = nil end end
+    if IsInGroup() and GetNumGroupMembers and count < (ns.Call(GetNumGroupMembers) or 0) then B.incomplete = true end
 end
 
 function B.PaladinList()
@@ -685,18 +701,24 @@ function B.SetSingle(p, key, blessing, auto)
     return true
 end
 
--- mouse wheel on a single: next/previous blessing (set by hand)
+-- mouse wheel on a player: his class blessing (no single), then every other
+-- blessing this paladin knows as a single one (set by hand)
 function B.CycleSingle(p, key, delta)
     if not B.CanEdit(p) or type(key) ~= "string" then return false end
-    local options = {}
-    for _, b in ipairs(B.LIST) do if canCast(p, b.key) then options[#options + 1] = b.key end end
-    if #options == 0 then return false end
+    local m = B.members[key]
+    local classB = m and p.set and p.set[m.class]
+    local options = { false }
+    for _, b in ipairs(B.LIST) do
+        if canCast(p, b.key) and b.key ~= classB then options[#options + 1] = b.key end
+    end
+    if #options == 1 then return false end
     p.single = p.single or {}
     p.pinned = p.pinned or {}
-    local pos = 0
-    for i, v in ipairs(options) do if v == p.single[key] then pos = i end end
+    local pos = 1
+    for i, v in ipairs(options) do if v == (p.single[key] or false) then pos = i end end
     pos = ((pos - 1 + (delta < 0 and 1 or -1)) % #options) + 1
-    p.single[key], p.pinned[key] = options[pos], true
+    local b = options[pos] or nil
+    p.single[key], p.pinned[key] = b, b and true or nil
     changed(p, true)
     ns.Debounce("bless-wheel-share", 1, function() B.Share(p) end)
     return true
@@ -716,6 +738,31 @@ function B.Singles(p)
         if ca ~= cb then return ca < cb end
         return a.key < b.key
     end)
+    return out
+end
+
+-- removes every single blessing of one player (all paladins you may change)
+function B.ClearSingles(key)
+    local n = 0
+    for _, p in ipairs(B.PaladinList()) do
+        if p.single and p.single[key] and B.CanEdit(p) then
+            p.single[key] = nil
+            if p.pinned then p.pinned[key] = nil end
+            changed(p)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+-- what each paladin gives a player: { { p, blessing, single, classB } }
+function B.GivenTo(key, class)
+    local out = {}
+    for _, p in ipairs(B.PaladinList()) do
+        local single = p.single and p.single[key]
+        local classB = p.set and p.set[class]
+        if single or classB then out[#out + 1] = { p = p, blessing = single or classB, single = single ~= nil, classB = classB } end
+    end
     return out
 end
 
@@ -893,6 +940,70 @@ function B.Suggest(onlyMe)
         end
     end
     return true
+end
+
+---------------------------------------------------------------------------
+-- New in the group: a class you do not bless yet gets a blessing from you
+-- right away (own assignments only, option "autoNew"). Your main blessing if
+-- the class wants it, else the best wish no other paladin gives that class
+-- (main blessings of other addon paladins are left to them – they fill in too).
+---------------------------------------------------------------------------
+local function mainBlessing(p)
+    local count, best = {}, nil
+    for _, b in pairs(p.set or {}) do count[b] = (count[b] or 0) + 1 end
+    for _, info in ipairs(B.LIST) do
+        local n = count[info.key]
+        if n and (not best or n > count[best]) then best = info.key end
+    end
+    return best
+end
+B.MainBlessing = mainBlessing
+
+-- classes: { [class] = true }; returns { [class] = blessing } of what was filled in
+function B.FillNew(classes)
+    local me = B.Me()
+    if not me or not me.me or not (IsInGroup() or B.test) or B.Settings().autoNew == false or not classes then return nil end
+    me.can = B.test and me.can or B.OwnSkills()
+    local myMain = mainBlessing(me)
+    local othersMain = {}
+    for _, p in pairs(B.paladins) do
+        if not p.me and p.addon == "lg" then local m = mainBlessing(p); if m then othersMain[m] = true end end
+    end
+    local members = B.GroupWishes()
+    local filled = {}
+    for _, class in ipairs(B.CLASSES) do
+        local units = classUnits[class]
+        if classes[class] and units and #units > 0 and not (me.set and me.set[class]) then
+            local taken = {}
+            for _, p in pairs(B.paladins) do
+                if not p.me and p.set and p.set[class] then taken[p.set[class]] = true end
+            end
+            local order = ordered(weights(members[class] or {}))
+            local wanted = {}
+            for _, b in ipairs(order) do wanted[b] = true end
+            local pick
+            if myMain and wanted[myMain] and not taken[myMain] and canCast(me, myMain) then pick = myMain end
+            for pass = 1, 2 do
+                if pick then break end
+                for _, b in ipairs(order) do
+                    if not taken[b] and canCast(me, b) and (pass == 2 or not othersMain[b]) then pick = b; break end
+                end
+            end
+            if pick then
+                me.set = me.set or {}
+                me.set[class] = pick
+                filled[class] = pick
+            end
+        end
+    end
+    if not next(filled) then return nil end
+    changed(me)
+    local parts = {}
+    for _, class in ipairs(B.CLASSES) do
+        if filled[class] then parts[#parts + 1] = ns.ClassName(class) .. ": " .. B.Name(filled[class]) end
+    end
+    ns.Print(L.BLESS_NEW_CLASS:format(table.concat(parts, ", ")))
+    return filled
 end
 
 ---------------------------------------------------------------------------
@@ -1259,15 +1370,48 @@ local function wanted()
 end
 B.Active = wanted
 
+-- classes present at the last look (nil: not in a group) and classes that
+-- joined since, filled in once the other paladins had time to sync
+local present, newClasses, retries, joinedAt = nil, {}, 0, -999
+local function fillLater()
+    if not IsInGroup() or not next(newClasses) then return end
+    if InCombatLockdown and InCombatLockdown() then ns.AfterCombat("bless-fill", fillLater); return end
+    local list = newClasses
+    newClasses = {}
+    B.Rebuild()
+    ns.Safe(B.FillNew, list)
+end
 local function rosterChanged()
     if not enabled() then return end
     B.Rebuild()
+    -- someone joined and the game does not know him yet: look again shortly
+    if B.incomplete and retries < 10 then
+        retries = retries + 1
+        ns.Debounce("bless-roster-retry", 2, rosterChanged)
+    elseif not B.incomplete then
+        retries = 0
+    end
+    if IsInGroup() and not B.test then
+        local now = {}
+        for class, units in pairs(classUnits) do if #units > 0 then now[class] = true end end
+        -- after a login or /reload inside a group nothing is new; after joining everything is
+        if present or GetTime() - joinedAt < 20 then
+            for class in pairs(now) do
+                if not present or not present[class] then newClasses[class] = true end
+            end
+        end
+        present = now
+        if next(newClasses) and isPaladin() then ns.Debounce("bless-fill-new", 6, fillLater) end
+    else
+        present, newClasses = nil, {}
+    end
     if wanted() then ns.Debounce("bless-scan", 0.5, B.Scan) end
     if ns.BlessingsBar then ns.BlessingsBar.Update() end
 end
+B.RosterChanged = rosterChanged
 ns.On("GROUP_ROSTER_UPDATE", function() ns.Debounce("bless-roster", 1, rosterChanged) end)
 ns.On("PLAYER_ENTERING_WORLD", function() ns.Debounce("bless-roster", 2, rosterChanged) end)
-ns.On("GROUP_JOINED", function() ns.After(3, B.Request) end)
+ns.On("GROUP_JOINED", function() joinedAt = GetTime(); ns.After(3, B.Request) end)
 ns.On("SPELLS_CHANGED", function()
     if not isPaladin() then return end
     ns.Debounce("bless-skills", 2, function()

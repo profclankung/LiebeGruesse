@@ -2,6 +2,20 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.87] – 2026-11-26
+
+- feat(blessings): players under every class in the quick window and on the page – mouse wheel on a name sets your single blessing for him (back to your class blessing is part of the cycle), a click opens every paladin's blessings as icons (one click sets it), right click removes his single blessings
+- feat(blessings): every single blessing shows in its paladin's cell with icon and name (e.g. Kings · Salty instead of "+1") – mouse wheel changes it, right click removes it
+- feat(blessings): mouse wheel on the aura and seal buttons of the bar picks the next one you know
+- feat(blessings): pop-outs of the bar open toward the middle of the screen by default (to the right when the bar sits on the left), still selectable left / right in Blessings › Settings
+- feat(blessings): someone of a class you do not bless yet joins – it gets a blessing from you right away (your main blessing if the class wants it, else what it wants most and nobody gives); option "Bless new classes automatically". /lg test blessjoin
+- fix(blessings): a player who just joined is no longer missing on the bar until the next roster change – the roster is read again while the game does not know him yet
+- change(blessings): the cell menu of the quick window only picks the class blessing; single blessings go through the players. /lg test blesspick
+- change(blessings): the bar counts per class every player who gets something from you – class blessing or his single one – so a green row means everything is on; the separate "Single" button is gone (a class where you only give singles gets its own row)
+- change(blessings): left click on the bar = greater blessing, right click = normal blessing (class rows and player buttons; on a player with a single blessing both cast it); mouse wheel on a player sets his single blessing
+- change(blessings): short tooltips – name, blessing and state, missing players in one line, one line of hints
+- fix(blessings): the Righteous Fury button shows for every spec as soon as it is switched on in Blessings › Settings, also when the game has no name for the old spell id
+
 ## [1.0.86] – 2026-11-26
 
 - change(general): new release with the version number raised – the addon itself is unchanged since 1.0.84 (blessing bar, quick assign window, single blessings, smart assign by spec, Light and Sanctuary)

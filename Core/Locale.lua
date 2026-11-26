@@ -1064,4 +1064,51 @@ local enUS16 = {
 }
 for k, v in pairs(enUS16) do enUS[k] = v end
 
+local enUS17 = {
+    BLESS_PLAYERS_HEAD = "Players",
+    BLESS_PLAYERS_HINT = "Mouse wheel: your single blessing · Click: pick a paladin's · Right-click: none",
+    BLESS_PLAYER_LIST_TIP = "Mouse wheel: your single blessing for him (back to your class blessing too) · Click: every paladin's blessings to pick from · Right-click: remove his single blessings",
+    BLESS_SINGLE_LINE_TIP = "Single blessing of this paladin. Mouse wheel: change · Click: pick · Right-click: remove",
+    BLESS_TIP_INSTEAD_OF = "single, instead of %s", BLESS_TIP_SINGLE_SHORT = "single blessing",
+    BLESS_PICK_TITLE = "%s · single blessing from:", BLESS_PICK_HINT = "Click: set · Mouse wheel on a row: change · Right-click / ×: remove",
+    BLESS_PICK_NOTHING = "No blessing from anyone yet.",
+    BLESS_PICK_NOT_PALADIN = "Mouse wheel sets your own single blessing – click the player to pick another paladin's.",
+    BLESS_PICK_REMOVE = "No single blessing", BLESS_PICK_CLASS_TIP = "%s's class blessing – choosing it removes the single blessing.",
+    BLESS_NEW_CLASS = "New in the group – you bless %s. Mouse wheel on the bar changes it.",
+    BLESS_NEW_NONE = "Nothing to fill in – every wish of these classes is given by another paladin already, or the option is off.",
+    BLESS_AUTO_NEW = "Bless new classes automatically",
+    BLESS_AUTO_NEW_TIP = "When someone of a class joins that you do not bless yet, you get a blessing for it right away: your main blessing if the class wants it, else what it wants most and no other paladin gives. Only your own assignments.",
+    BLESS_SIDE_AUTO = "Auto",
+    BLESS_OPT_SIDE_TIP = "Auto: toward the middle of the screen – to the right when the bar sits on the left side.",
+    BLESS_SELF_TIP = "A button on top of the blessing bar: green while it is on you, red when it is missing; click casts it. Mouse wheel or right-click on the bar button picks another one.",
+    BLESS_SELF_WHEEL_TIP = "Click: cast it · Mouse wheel: next one · Right-click: choose",
+    BLESS_CELL_TIP = "Click: choose · Mouse wheel: change · Right-click: remove",
+    BLESS_PLAYER_TIP = "Left-click: cast it on him · Mouse wheel: your single blessing for him (back to the class blessing too) · Right-click: choose",
+    BLESS_QUICK_TIP = "Every paladin and class at a glance: click a blessing to change it, mouse wheel cycles, right-click removes. The players under each class: mouse wheel sets your single blessing, a click every paladin's. Also /lg assign.",
+    BLESS_SINGLES_HINT = "A single blessing replaces that paladin's class blessing on the player. Mouse wheel on a player name (in the grid above) sets yours. Click: change · Mouse wheel: change · Right-click: remove",
+}
+for k, v in pairs(enUS17) do enUS[k] = v end
+
+-- short tooltips (1.0.87, Ben: "only the important things")
+local enUS18 = {
+    BLESS_ROW_TIP = "Left: greater · Right: normal · Wheel: change",
+    BLESS_PLAYER_TIP = "Left: greater · Right: normal · Wheel: single blessing",
+    BLESS_PLAYER_TIP_SINGLE = "Click: cast · Wheel: change single blessing",
+    BLESS_TIP_SINGLES = "Single: %s", BLESS_TIP_MISSING = "Missing: %s",
+    BLESS_ROW_ABSENT = "Nobody of this class in the group",
+    BLESS_AUTO_TIP_SHORT = "Next missing blessing · Right: smart assign",
+    BLESS_SMART_TIP_SHORT = "Assign by what everyone plays",
+    BLESS_SELF_ON = "On", BLESS_SELF_OFF = "Off",
+    BLESS_SELF_WHEEL_TIP = "Click: cast · Wheel: next",
+    BLESS_SELF_FURY_TIP = "Click: cast",
+    BLESS_SELF_FURY = "Righteous Fury button",
+    BLESS_SELF_FURY_TIP_OPT = "A Righteous Fury button on top of the bar, for every spec – green while it is on you.",
+    BLESS_SELF_TIP = "A button on top of the bar: green while it is on you, click casts it, mouse wheel picks another one.",
+    BLESS_PLAYER_LIST_TIP = "Wheel: your single · Click: choose · Right: remove",
+    BLESS_SINGLE_LINE_TIP = "Wheel: change · Click: choose · Right: remove",
+    BLESS_CELL_TIP = "Click: choose · Wheel: change · Right: remove",
+    BLESS_OPT_PLAYERS_TIP = "Hovering a class button shows its players: left click greater, right click normal blessing, mouse wheel a single blessing.",
+}
+for k, v in pairs(enUS18) do enUS[k] = v end
+
 for k, v in pairs(enUS) do L[k] = v end

@@ -152,7 +152,7 @@ Guide.LIST = {
           "Right-click in combat steps through the class and skips dead players.",
           "Mouse wheel on bar or grid cycles the blessing.", "Bar and sync options: tab “Settings” on the Blessings page." },
       shared = "Your assignments – in the raid, PallyPower-compatible.",
-      cmds = { "/lg bless", "/lg test bless", "/lg test bless off", "/lg test blesslive", "/lg test blessspec", "/lg test blessspells", "/lg assign", "/lg test blesswindow" } },
+      cmds = { "/lg bless", "/lg test bless", "/lg test bless off", "/lg test blesslive", "/lg test blessspec", "/lg test blessspells", "/lg assign", "/lg test blesswindow", "/lg test blesspick", "/lg test blessjoin" } },
 
     { key = "council", section = "raid", icon = "gem", name = "Loot Council", page = "council", module = "council",
       who = { "Raiders", "Loot master", "Council" }, test = "lc test",

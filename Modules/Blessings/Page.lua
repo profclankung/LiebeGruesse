@@ -3,8 +3,10 @@
 local _, ns = ...
 local UI, Theme, L, Names = ns.UI, ns.Theme, ns.L, ns.Names
 local B = ns.Blessings
+local P = ns.BlessPlayers
 
 local COL_W, ROW_H, NAME_W = 74, 46, 170
+local CELL_TOP = 42   -- single lines below icon and count
 
 local function className(class)
     return ns.ClassName(class)
@@ -31,10 +33,11 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         bar:Toggle(L.BLESS_RAID_ONLY, function() return o().raidOnly end, function(v) o().raidOnly = v; barUpdate() end)
         bar:Toggle(L.BLESS_SOLO, function() return o().solo end, function(v) o().solo = v; barUpdate() end, { tip = L.BLESS_SOLO_TIP })
         bar:Toggle(L.BLESS_LIVE, function() return o().live ~= false end, function(v) o().live = v; barUpdate() end, { tip = L.BLESS_LIVE_TIP })
+        bar:Toggle(L.BLESS_AUTO_NEW, function() return o().autoNew ~= false end, function(v) o().autoNew = v end, { tip = L.BLESS_AUTO_NEW_TIP })
         local look = form:Section(L.BLESS_LOOK)
         look:Toggle(L.BLESS_OPT_PLAYERS, function() return o().players ~= false end, function(v) o().players = v; barUpdate() end, { tip = L.BLESS_OPT_PLAYERS_TIP })
-        look:Segment(L.BLESS_OPT_SIDE, { { value = "left", text = L.BLESS_SIDE_LEFT }, { value = "right", text = L.BLESS_SIDE_RIGHT } },
-            function() return o().side or "left" end, function(v) o().side = v; barUpdate() end, { width = 160 })
+        look:Segment(L.BLESS_OPT_SIDE, { { value = "auto", text = L.BLESS_SIDE_AUTO }, { value = "left", text = L.BLESS_SIDE_LEFT }, { value = "right", text = L.BLESS_SIDE_RIGHT } },
+            function() return o().side or "auto" end, function(v) o().side = v; barUpdate() end, { width = 210, tip = L.BLESS_OPT_SIDE_TIP })
         look:Toggle(L.BLESS_OPT_TIMES, function() return o().times ~= false end, function(v) o().times = v; barUpdate() end, { tip = L.BLESS_OPT_TIMES_TIP })
         look:Toggle(L.BLESS_OPT_COUNTS, function() return o().counts ~= false end, function(v) o().counts = v; barUpdate() end)
         look:Slider(L.BLESS_OPT_SCALE, 0.6, 1.6, 0.05, function() return ns.BlessingsBar.Scale() end,
@@ -47,7 +50,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         selfB:Toggle(L.BLESS_SELF_SEAL, function() return o().seal == true end, function(v) o().seal = v; barUpdate() end, { tip = L.BLESS_SELF_TIP })
         selfB:Dropdown(L.BLESS_SELF_SEAL_PICK, choices(ns.BlessingsBar.SEALS), function() return o().sealSpell or ns.BlessingsBar.SelfChoice("seal") end,
             function(v) o().sealSpell = v; barUpdate() end, { show = function() return o().seal == true end })
-        selfB:Toggle(L.BLESS_SELF_FURY, function() return o().fury == true end, function(v) o().fury = v; barUpdate() end)
+        selfB:Toggle(L.BLESS_SELF_FURY, function() return o().fury == true end, function(v) o().fury = v; barUpdate() end, { tip = L.BLESS_SELF_FURY_TIP_OPT })
         local sync = form:Section(L.BLESS_SYNC)
         sync:Toggle(L.BLESS_FREE, function() return o().freeAssign end, function(v) o().freeAssign = v; B.Share(B.Me()) end, { tip = L.BLESS_FREE_TIP })
         -- PallyPower: guests without this addon (read) and sending to them (sync)
@@ -110,6 +113,14 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
 
     -- grid pieces are created on demand and reused
     local headCells, rowsUI, missUI = {}, {}, {}
+    local playerUI = {}   -- [column] = player buttons under the class name
+    local plHead = UI.Text(body, 10, "accent")
+    plHead:SetText(L.BLESS_PLAYERS_HEAD:upper())
+    local plHint = UI.Text(body, 10, "muted")
+    plHint:SetWordWrap(true)
+    plHint:SetJustifyH("LEFT")
+    plHint:SetWidth(NAME_W - 16)
+    plHint:SetText(L.BLESS_PLAYERS_HINT)
     local gridHead = UI.Text(body, 10, "muted")
     gridHead:SetText(L.BLESS_PALADIN:upper())
     local gridLine = UI.Divider(body)
@@ -135,14 +146,14 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         c.hl = UI.Fill(c, "hover", "HIGHLIGHT"); c.hl:SetAllPoints()
         c.icon = c:CreateTexture(nil, "ARTWORK")
         c.icon:SetSize(24, 24)
-        c.icon:SetPoint("LEFT", 4, 0)
+        c.icon:SetPoint("TOPLEFT", 4, -8)
         c.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         c.count = UI.Text(c, 12, "text")
         c.count:SetPoint("TOPLEFT", c.icon, "TOPRIGHT", 5, 1)
         c.left = UI.Text(c, 10, "muted")
         c.left:SetPoint("BOTTOMLEFT", c.icon, "BOTTOMRIGHT", 5, -1)
         c.dash = UI.Text(c, 12, "borderDim", "CENTER")
-        c.dash:SetPoint("CENTER")
+        c.dash:SetPoint("TOP", 0, -14)
         c.dash:SetText("—")
         c:SetScript("OnClick", function(self, button)
             if not self.p then return end
@@ -165,12 +176,10 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
                 local have, total = B.Wanted(self.class, b)
                 lines[#lines + 1] = L.BLESS_TIP_STATUS:format(have, total)
             end
-            for _, s in ipairs(B.Singles(self.p)) do
-                if s.member.class == self.class then
-                    lines[#lines + 1] = L.BLESS_TIP_INSTEAD:format(s.member.name, B.Name(s.blessing))
-                end
+            for _, s in ipairs(P.SinglesIn(self.p, self.class)) do
+                lines[#lines + 1] = P.IconText(s.blessing, 14) .. " " .. L.BLESS_TIP_INSTEAD:format(s.member.name, B.Name(s.blessing))
             end
-            lines[#lines + 1] = " "
+            -- (no blank line: short tooltips)
             lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
             UI.Tooltip(self, (b and B.Name(b) or L.BLESS_NONE) .. " · " .. className(self.class), lines)
         end)
@@ -187,7 +196,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         r.bg = UI.Fill(r, (i % 2 == 0) and "rowAlt" or "row", "BACKGROUND"); r.bg:SetAllPoints()
         r.icon = r:CreateTexture(nil, "ARTWORK")
         r.icon:SetSize(28, 28)
-        r.icon:SetPoint("LEFT", 6, 0)
+        r.icon:SetPoint("TOPLEFT", 6, -9)
         r.name = UI.Text(r, 13, "text")
         r.name:SetPoint("TOPLEFT", r.icon, "TOPRIGHT", 8, -1)
         r.name:SetWidth(NAME_W - 46)
@@ -253,7 +262,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
                 if classB and classB ~= self.blessing then lines[#lines + 1] = L.BLESS_TIP_REPLACES:format(B.Name(classB)) end
             end
             lines[#lines + 1] = self.pinned and L.BLESS_TIP_PINNED or L.BLESS_TIP_SMART
-            lines[#lines + 1] = " "
+            -- (no blank line: short tooltips)
             lines[#lines + 1] = B.CanEdit(self.p) and L.BLESS_CELL_TIP or L.BLESS_CANT_EDIT
             UI.Tooltip(self, (m and m.name or self.key) .. " · " .. (B.Name(self.blessing) or ""), lines)
         end)
@@ -303,6 +312,8 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         if #pals == 0 then
             for _, r in ipairs(rowsUI) do r:Hide() end
             for _, h in ipairs(headCells) do h:Hide() end
+            for _, col in pairs(playerUI) do for _, b in ipairs(col) do b:Hide() end end
+            plHead:Hide(); plHint:Hide()
             for _, m in ipairs(missUI) do m:Hide() end
             gridHead:Hide(); gridLine:Hide(); legend:Hide(); missHead:Hide(); missLine:Hide()
             empty:ClearAllPoints()
@@ -336,11 +347,38 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         gridLine:SetWidth(NAME_W + #classes * colW)
 
         local y = 24
+        -- players under every class name (wheel: your single, click: pick, right click: none)
+        local most = 0
+        for i, class in ipairs(classes) do
+            local list = P.ClassPlayers(class)
+            playerUI[i] = playerUI[i] or {}
+            for j, key in ipairs(list) do
+                local b = playerUI[i][j]
+                if not b then b = P.Button(body); playerUI[i][j] = b end
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", body, "TOPLEFT", NAME_W + (i - 1) * colW, -(y + (j - 1) * P.LINE_H))
+                b:SetWidth(colW - 4)
+                b:Set(key, q)
+            end
+            for j = #list + 1, #playerUI[i] do playerUI[i][j]:Hide(); playerUI[i][j].key = nil end
+            most = math.max(most, #list)
+        end
+        for i = #classes + 1, #playerUI do for _, b in ipairs(playerUI[i]) do b:Hide(); b.key = nil end end
+        plHead:SetShown(most > 0); plHint:SetShown(most > 0)
+        if most > 0 then
+            plHead:ClearAllPoints(); plHead:SetPoint("TOPLEFT", body, "TOPLEFT", 8, -(y + 1))
+            plHint:ClearAllPoints(); plHint:SetPoint("TOPLEFT", plHead, "BOTTOMLEFT", 0, -3)
+            y = y + math.max(most * P.LINE_H, 44) + 8
+        end
         for i, p in ipairs(pals) do
             local r = paladinRow(i)
             r:ClearAllPoints()
             r:SetPoint("TOPLEFT", body, "TOPLEFT", 0, -y)
             r:SetWidth(NAME_W + #classes * colW)
+            local lines = 0
+            for _, class in ipairs(classes) do lines = math.max(lines, #P.SinglesIn(p, class)) end
+            local h = math.max(ROW_H, CELL_TOP + lines * P.LINE_H + 4)
+            r:SetHeight(h)
             ns.SetClassIcon(r.icon, "PALADIN")
             r.name:SetText(ns.Highlight(ns.ColorName(p.name or p.key, "PALADIN"), q))
             r.sub:SetText(p.me and Theme.HexColor("accent", L.BLESS_YOU) or (p.addon == "lg" and L.BLESS_ADDON)
@@ -348,8 +386,9 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
             for c, class in ipairs(classes) do
                 local cl = cell(r, c)
                 cl:ClearAllPoints()
-                cl:SetPoint("LEFT", r, "LEFT", NAME_W + (c - 1) * colW, 0)
+                cl:SetPoint("TOPLEFT", r, "TOPLEFT", NAME_W + (c - 1) * colW, -3)
                 cl:SetWidth(colW - 4)
+                cl:SetHeight(h - 6)
                 cl.p, cl.class = p, class
                 local b = p.set and p.set[class]
                 local st = B.status[class]
@@ -362,19 +401,17 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
                         cl.count:SetText(Theme.HexColor("muted", "—"))
                     end
                     local left = st and st.left[b]
-                    local extra = 0
-                    for _, sg in ipairs(B.Singles(p)) do if sg.member.class == class then extra = extra + 1 end end
-                    cl.left:SetText((left and left ~= math.huge and ("%dm"):format(math.floor(left / 60)) or "")
-                        .. (extra > 0 and Theme.HexColor("accent", "  +" .. extra) or ""))
+                    cl.left:SetText(left and left ~= math.huge and ("%dm"):format(math.floor(left / 60)) or "")
                     cl.count:Show(); cl.left:Show()
                 else
                     cl.icon:Hide(); cl.count:Hide(); cl.left:Hide(); cl.dash:Show()
                 end
+                P.CellLines(cl, p, class, CELL_TOP, q)
                 cl:Show()
             end
             for c = #classes + 1, #r.cells do r.cells[c]:Hide() end
             r:Show()
-            y = y + ROW_H + 2
+            y = y + h + 2
         end
         for i = #pals + 1, #rowsUI do rowsUI[i]:Hide() end
 

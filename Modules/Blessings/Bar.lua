@@ -1,10 +1,11 @@
 -- Blessing bar for paladins, one button per class you bless:
 --   class icon, blessing, buffed/total and time left, tinted green / yellow /
---   red (all / some / nobody buffed). Left click: (greater) blessing on that
---   class, right click: single blessing on someone missing it.
+--   red (all / some / nobody buffed). buffed/total counts every player of the
+--   class who gets something from you – your class blessing or his single one.
+--   Left click: greater blessing on the class, right click: normal blessing on
+--   the next one missing it (also a single blessing).
 -- Hovering a class button pops out its players: what you give each of them,
--- time left, left click casts it, right click / mouse wheel sets a single
--- blessing. Your single blessings have their own button ("Single 2/2").
+-- time left; left click greater, right click normal, mouse wheel sets a single.
 -- On top: aura, seal and Righteous Fury buttons (optional), "Cast next" (the
 -- next missing blessing) and the header with page, quick window, smart assign
 -- and lock. Every cast is one click (secure buttons); the pop-outs open in
@@ -17,13 +18,26 @@ ns.BlessingsBar = Bar
 
 local WIDTH, ROW_H, HEAD_H = 168, 30, 24
 local FLY_W, PROW_H, MAX_PLAYERS = 170, 26, 15
-local SINGLE_ROW = #B.CLASSES + 1          -- index of the "Single" button among the rows
 local frame, auto, rows = nil, nil, {}
 local selfButtons = {}                     -- aura / seal / fury
 local flies = {}                           -- [row index] = pop-out frame with player buttons
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() end
 local function opt() return B.Settings() end
+-- side the pop-outs open to: "auto" = toward the middle of the screen
+function Bar.Side()
+    local side = opt().side
+    if side == "left" or side == "right" then return side end
+    if frame and frame.GetCenter and UIParent.GetCenter then
+        local x = frame:GetCenter()
+        local mid = UIParent:GetCenter()
+        local s1, s2 = frame:GetEffectiveScale(), UIParent:GetEffectiveScale()
+        if x and mid and s1 and s2 and s2 > 0 then
+            return (x * s1 / s2 < mid) and "right" or "left"
+        end
+    end
+    return "left"
+end
 
 local function inRange(spellName, unit)
     if C_Spell and C_Spell.IsSpellInRange then
@@ -332,10 +346,7 @@ local function playerButton(fly, i)
     b:SetSize(FLY_W - 4, PROW_H - 2)
     b:SetPoint("TOPLEFT", 2, -2 - (i - 1) * PROW_H)
     b:RegisterForClicks("AnyUp", "AnyDown")
-    b:HookScript("PostClick", function(self, mouse, down)
-        noteClick(self, mouse)
-        if mouse == "RightButton" and not down and self.key then Bar.SingleMenu(self, self.key) end
-    end)
+    b:HookScript("PostClick", function(self, mouse) noteClick(self, mouse) end)
     b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetTexture(Theme.WHITE); b.bg:SetAllPoints()
     b.base = UI.Fill(b, "row", "BACKGROUND"); b.base:SetAllPoints(); b.base:SetDrawLayer("BACKGROUND", -1)
     b.hl = UI.Fill(b, "hover", "HIGHLIGHT"); b.hl:SetAllPoints()
@@ -350,20 +361,16 @@ local function playerButton(fly, i)
     b:SetScript("OnEnter", function(self)
         local m = self.key and B.members[self.key]
         if not m then return end
-        ns.TipOwner(self, "ANCHOR_LEFT")
+        ns.TipOwner(self, Bar.Side() == "right" and "ANCHOR_RIGHT" or "ANCHOR_LEFT")
         local cr, cg, cb = ns.ClassColor(m.class)
-        GameTooltip:AddLine(m.name, cr, cg, cb)
-        local kind, source = B.UnitType(m.unit, m.key, m.class)
-        GameTooltip:AddLine(L.BLESS_TIP_PLAYS:format(L["BLESS_TYPE_" .. kind:upper()] or kind, L["BLESS_SRC_" .. tostring(source):upper()] or ""), 0.8, 0.8, 0.8, true)
+        GameTooltip:SetText(m.name, cr, cg, cb)
         if self.blessing then
-            GameTooltip:AddLine((self.single and L.BLESS_TIP_SINGLE or L.BLESS_TIP_FROM_YOU):format(B.Name(self.blessing) or ""), 1, 0.82, 0)
-            local has, _, est = B.SingleState(self.key, self.blessing)
-            GameTooltip:AddLine(has and L.BLESS_TIP_HAS or L.BLESS_TIP_MISSING_ONE, has and 0.4 or 1, has and 1 or 0.4, 0.4)
-            if est then GameTooltip:AddLine(L.BLESS_ESTIMATED, 0.6, 0.6, 0.6, true) end
-            if self.single then GameTooltip:AddLine(self.pinned and L.BLESS_TIP_PINNED or L.BLESS_TIP_SMART, 0.6, 0.6, 0.6, true) end
+            local has, left = B.SingleState(self.key, self.blessing)
+            local state = has and Theme.HexColor("good", showTimes() and fmtLeft(left) or L.BLESS_SINGLE_HAS) or Theme.HexColor("bad", L.BLESS_SINGLE_MISSING)
+            GameTooltip:AddLine(blessIcon(self.blessing, 14) .. " " .. (B.Name(self.blessing) or "")
+                .. (self.single and Theme.HexColor("accent", " · " .. L.BLESS_SINGLE_HEAD) or "") .. "  " .. state, 1, 0.82, 0)
         end
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L.BLESS_PLAYER_TIP, 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine(self.single and L.BLESS_PLAYER_TIP_SINGLE or L.BLESS_PLAYER_TIP, 0.5, 0.5, 0.5, true)
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -403,50 +410,36 @@ local function makeFly(i, row)
 end
 
 local function makeRow(i)
-    local single = i == SINGLE_ROW
-    local r = CreateFrame("Button", single and "LiebeGruesseBlessSingles" or ("LiebeGruesseBlessRow" .. i), frame, "SecureActionButtonTemplate")
+    local r = CreateFrame("Button", "LiebeGruesseBlessRow" .. i, frame, "SecureActionButtonTemplate")
     r:SetSize(WIDTH - 8, ROW_H - 2)
     r:RegisterForClicks("AnyUp", "AnyDown")
     rowTexts(r)
-    if single then
-        r.class:SetTexture(Theme.Icon("users", 32)); r.class:SetVertexColor(Theme.Color("accent"))
-        r.count:ClearAllPoints(); r.count:SetPoint("LEFT", r.class, "RIGHT", 8, 0)
-        r.bless:Hide()
-        r:SetScript("OnEnter", function(self)
-            UI.Tooltip(self, L.BLESS_SINGLES_TITLE, { L.BLESS_SINGLE_DONE_TIP:format(Bar.SingleCount()), " ", L.BLESS_SINGLE_BTN_TIP })
-        end)
-        r:HookScript("PostClick", function(self, mouse, down)
-            if not down and mouse == "LeftButton" and not inCombat() then Bar.AddSingle(self) end
-        end)
-    else
+    do
         -- down and up: the cast follows the key-down setting, noting twice is harmless
         r:HookScript("PostClick", function(self, mouse) noteClick(self, mouse) end)
         wrap(r, "OnClick", ROTATE)
         r:SetScript("OnEnter", function(self)
             if not self.cls then return end
-            ns.TipOwner(self, opt().side == "right" and "ANCHOR_LEFT" or "ANCHOR_RIGHT")
+            ns.TipOwner(self, Bar.Side() == "right" and "ANCHOR_LEFT" or "ANCHOR_RIGHT")
             local cr, cg, cb = ns.ClassColor(self.cls)
-            GameTooltip:AddLine(ns.ClassIcon(self.cls, 14) .. " " .. ns.ClassName(self.cls), cr, cg, cb)
-            GameTooltip:AddLine(B.Name(self.blessing) or "", 1, 0.82, 0)
-            if self.absent then GameTooltip:AddLine(L.BLESS_ROW_ABSENT, 0.6, 0.6, 0.6, true) end
-            local st = B.status[self.cls]
-            if st and st.estimated and not self.absent then
-                GameTooltip:AddLine((ns.BlessNative and ns.BlessNative.Active()) and L.BLESS_ESTIMATED_LIVE or L.BLESS_ESTIMATED, 0.6, 0.6, 0.6, true)
+            GameTooltip:SetText(ns.ClassName(self.cls), cr, cg, cb)
+            local rs = Bar.RowState(self.cls)
+            if self.blessing and B.Me() and B.Me().set and B.Me().set[self.cls] then
+                GameTooltip:AddLine(blessIcon(self.blessing, 14) .. " " .. (B.Name(self.blessing) or ""), 1, 0.82, 0)
             end
-            for _, m in ipairs(B.missing) do
-                if m.class == self.cls then
-                    for _, b in ipairs(m.list) do
-                        if b == self.blessing then GameTooltip:AddLine(L.BLESS_TIP_MISSING:format(m.name), 1, 0.4, 0.4) end
-                    end
+            if self.absent then
+                GameTooltip:AddLine(L.BLESS_ROW_ABSENT, 0.6, 0.6, 0.6)
+            else
+                local miss, singles = {}, {}
+                for _, e in ipairs(rs.players) do
+                    local name = ns.Names.Display(e.name):match("^(%S+)") or e.name
+                    if not e.has then miss[#miss + 1] = name end
+                    if e.single then singles[#singles + 1] = blessIcon(e.blessing, 12) .. " " .. name end
                 end
+                if #singles > 0 then GameTooltip:AddLine(L.BLESS_TIP_SINGLES:format(table.concat(singles, ", ")), 0.55, 0.75, 1, true) end
+                if #miss > 0 then GameTooltip:AddLine(L.BLESS_TIP_MISSING:format(table.concat(miss, ", ")), 1, 0.4, 0.4, true) end
             end
-            for _, s in ipairs(B.Singles(B.Me())) do
-                if s.member.class == self.cls and s.blessing ~= self.blessing then
-                    GameTooltip:AddLine(L.BLESS_TIP_INSTEAD:format(s.member.name, B.Name(s.blessing)), 0.55, 0.75, 1, true)
-                end
-            end
-            GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(L.BLESS_ROW_TIP, 0.6, 0.6, 0.6, true)
+            GameTooltip:AddLine(L.BLESS_ROW_TIP, 0.5, 0.5, 0.5, true)
             GameTooltip:Show()
         end)
         -- wheel: change the blessing for this class (secure attributes can only
@@ -499,8 +492,26 @@ local function makeSelfButton(kind)
     b.label = UI.Text(b, 12, "text"); b.label:SetPoint("LEFT", b.icon, "RIGHT", 8, 0); b.label:SetPoint("RIGHT", b.state, "LEFT", -4, 0)
     b.label:SetWordWrap(false)
     b:SetScript("OnEnter", function(self)
-        UI.Tooltip(self, self.spell or L["BLESS_SELF_" .. kind:upper()], { self.active and L.BLESS_SELF_ON or L.BLESS_SELF_OFF, " ", L.BLESS_SELF_TIP })
+        UI.Tooltip(self, self.spell or L["BLESS_SELF_" .. kind:upper()], {
+            self.active and Theme.HexColor("good", L.BLESS_SELF_ON) or Theme.HexColor("bad", L.BLESS_SELF_OFF),
+            kind == "fury" and L.BLESS_SELF_FURY_TIP or L.BLESS_SELF_WHEEL_TIP })
     end)
+    -- mouse wheel: next / previous aura or seal you know (secure attributes: outside of combat)
+    if kind ~= "fury" then
+        b:EnableMouseWheel(true)
+        b:SetScript("OnMouseWheel", function(self, delta)
+            if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
+            local items = Bar.SelfChoices(kind == "aura" and Bar.AURAS or Bar.SEALS)
+            if #items == 0 then return end
+            local current = Bar.SelfChoice(kind)
+            local pos = 0
+            for i, it in ipairs(items) do if it.value == current then pos = i end end
+            pos = ((pos - 1 + (delta < 0 and 1 or -1)) % #items) + 1
+            opt()[kind .. "Spell"] = items[pos].value
+            Bar.Update()
+            if self:IsMouseOver() then self:GetScript("OnEnter")(self) end
+        end)
+    end
     b:SetScript("OnLeave", function() GameTooltip:Hide() end)
     b:HookScript("PostClick", function(self, mouse, down)
         if down or mouse ~= "RightButton" or inCombat() then return end
@@ -535,10 +546,10 @@ local function create()
     open.tip = L.PAGE_BLESSINGS
     local quick = UI.IconButton(head, "layout-grid", 22, function() if ns.BlessAssign then ns.BlessAssign.Toggle() end end)
     quick:SetPoint("LEFT", open, "RIGHT", 3, 0)
-    quick.tip, quick.tipLines = L.BLESS_QUICK, { L.BLESS_QUICK_TIP }
+    quick.tip = L.BLESS_QUICK
     local smart = UI.IconButton(head, "sparkles", 22, smartAssign)
     smart:SetPoint("LEFT", quick, "RIGHT", 3, 0)
-    smart.tip, smart.tipLines = L.BLESS_SMART, { L.BLESS_SMART_TIP }
+    smart.tip, smart.tipLines = L.BLESS_SMART, { L.BLESS_SMART_TIP_SHORT }
     frame.smart = smart
     local lock = ns.Movers.LockButton("blessingsBar", frame, head, 22)
     lock:SetPoint("LEFT", smart, "RIGHT", 3, 0)
@@ -572,12 +583,12 @@ local function create()
     end)
     auto:SetScript("OnEnter", function(self)
         self:SetBackdropBorderColor(Theme.Color("accent"))
-        UI.Tooltip(self, L.BLESS_AUTO, { L.BLESS_AUTO_TIP })
+        UI.Tooltip(self, L.BLESS_AUTO, { L.BLESS_AUTO_TIP_SHORT })
     end)
     auto:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(Theme.Color("border")); GameTooltip:Hide() end)
 
     secureHeader()
-    for i = 1, SINGLE_ROW do makeRow(i) end
+    for i = 1, #B.CLASSES do makeRow(i) end
     -- every row knows every pop-out (to hide the others)
     for _, r in ipairs(rows) do
         if r.secureFly then
@@ -609,31 +620,59 @@ local function shouldShow()
     return true
 end
 
+-- what you give the players of a class and whether they have it. Counts
+-- every player who gets something from you: your class blessing, or his
+-- single one instead. { total, have, left, estimated, players = { { key, unit,
+-- name, blessing, single, has, left } }, classUnits, classNeed }
+function Bar.RowState(class)
+    local me = B.Me()
+    local classB = me and me.set and me.set[class]
+    local out = { total = 0, have = 0, players = {}, classUnits = {}, classNeed = {} }
+    for _, unit in ipairs(B.classUnits[class] or {}) do
+        local key = B.unitKey[unit]
+        local single = key and me and me.single and me.single[key]
+        local b = single or classB
+        if b then
+            local has, left, est = false, nil, false
+            if key then has, left, est = B.SingleState(key, b) end
+            if est then out.estimated = true end
+            out.total = out.total + 1
+            if has then
+                out.have = out.have + 1
+                if left and (not out.left or left < out.left) then out.left = left end
+            end
+            local m = key and B.members[key]
+            out.players[#out.players + 1] = { key = key, unit = unit, name = m and m.name or unit, blessing = b, single = single ~= nil, has = has, left = left }
+            if not single then
+                out.classUnits[#out.classUnits + 1] = unit
+                if not has then out.classNeed[#out.classNeed + 1] = unit end
+            end
+        end
+    end
+    return out
+end
+
 -- texts of one class row; safe in combat
 local function paintRow(r)
-    local class, blessing, present = r.cls, r.blessing, not r.absent
-    local units = B.classUnits[class] or {}
-    local st = B.status[class] or { total = #units, have = {}, left = {}, need = {} }
-    -- total: players who should get it (a single from you replaces it on someone)
-    local have = st.have[blessing] or 0
-    local total = st.want and st.want[blessing] or (st.total > 0 and st.total or #units)
-    if not B.status[class] then total = #units end
+    local class, present = r.cls, not r.absent
+    local rs = Bar.RowState(class)
     ns.SetClassIcon(r.class, class)
-    r.bless:SetTexture(B.Icon(blessing))
-    local left = st.left[blessing]
-    if present then
+    r.bless:SetTexture(B.Icon(r.blessing))
+    local have, total, left = rs.have, rs.total, rs.left
+    if present and total > 0 then
         -- "~": aura data hidden (combat), the numbers are the last known state
-        r.count:SetText(opt().counts ~= false and countText(have, total, st.estimated) or "")
+        r.count:SetText(opt().counts ~= false and countText(have, total, rs.estimated) or "")
         r.left:SetText(showTimes() and fmtLeft(left) or "")
         r.left:SetTextColor(Theme.Color(left and left < 300 and "warn" or "good"))
     else
         r.count:SetText(Theme.HexColor("muted", "—"))
         r.left:SetText("")
     end
+    present = present and total > 0
     tint(r.bg, have, total, present)
     r.mark:SetShown(present and have < total)
     r:SetAlpha(present and 1 or 0.55)
-    return st, have, total, left
+    return rs
 end
 
 -- your singles: done (on the player), total (players in the group)
@@ -644,14 +683,6 @@ function Bar.SingleCount()
         if B.SingleState(s.key, s.blessing) then done = done + 1 end
     end
     return done, total
-end
-
-local function paintSingleRow(r)
-    local done, total = Bar.SingleCount()
-    r.count:SetText(L.BLESS_SINGLE_HEAD .. "  " .. (total == 0 and Theme.HexColor("muted", "—") or countText(done, total)))
-    r.left:SetText(total == 0 and Theme.HexColor("accent", "+") or "")
-    tint(r.bg, done, total, total > 0)
-    r.mark:SetShown(total > 0 and done < total)
 end
 
 -- one player in a pop-out: what you give him and whether he has it
@@ -680,7 +711,7 @@ local function fillFly(i, row, list)
     local n = math.min(#list, MAX_PLAYERS)
     local hasFly = opt().players ~= false and n > 0
     fly:ClearAllPoints()
-    if opt().side == "right" then fly:SetPoint("TOPLEFT", row, "TOPRIGHT", 0, 2)
+    if Bar.Side() == "right" then fly:SetPoint("TOPLEFT", row, "TOPRIGHT", 0, 2)
     else fly:SetPoint("TOPRIGHT", row, "TOPLEFT", 0, 2) end
     fly:SetHeight(math.max(1, n) * PROW_H + 4)
     for j = 1, n do
@@ -688,9 +719,12 @@ local function fillFly(i, row, list)
         b.key, b.blessing, b.single, b.pinned = e.key, e.blessing, e.single, e.pinned
         paintPlayer(b)
         local m = B.members[e.key]
+        -- left: greater (his class blessing), right: normal; a single is always the normal one
         local spell = e.blessing and B.SpellName(B.SpellFor(e.blessing, "single"))
-        local ok = spell and m and usable(m.unit)
-        setSecure(b, { type1 = ok and "spell" or nil, spell1 = ok and spell or nil, unit1 = ok and m.unit or nil, type2 = false, spell2 = false, unit2 = false })
+        local greater = e.blessing and not e.single and B.SpellName(B.SpellFor(e.blessing, "greater"))
+        local ok = (spell or greater) and m and usable(m.unit)
+        setSecure(b, { type1 = ok and "spell" or nil, spell1 = ok and (greater or spell) or nil, unit1 = ok and m.unit or nil,
+            type2 = (ok and spell) and "spell" or nil, spell2 = ok and spell or nil, unit2 = (ok and spell) and m.unit or nil })
         b:Show()
     end
     for j = n + 1, #fly.buttons do fly.buttons[j]:Hide(); fly.buttons[j].key = nil end
@@ -716,15 +750,32 @@ local function classPlayers(class)
     return out
 end
 
+-- Righteous Fury by name when the client has no name for the id (other id on WoW: Forever)
+local FURY_NAMES = { "Righteous Fury", "Zorn der Gerechtigkeit" }
+local function furyName()
+    local name = B.SpellName(Bar.FURY[1])
+    if type(name) == "string" and name ~= "" then return name end
+    for _, n in ipairs(FURY_NAMES) do
+        if C_Spell and C_Spell.GetSpellInfo then
+            local info = ns.Call(C_Spell.GetSpellInfo, n)
+            if type(info) == "table" and info.spellID then return info.name or n, info.spellID end
+        end
+    end
+    return FURY_NAMES[1]
+end
 -- self buff buttons (aura / seal / fury): which one, cast attributes, green while on
 local function paintSelf(kind, b, combat)
     local ids = choice(kind)
     local id = ids and knownId(ids)
     local name = id and B.SpellName(id)
+    if kind == "fury" then
+        local n, fid = furyName()
+        name, id = n, fid or id
+    end
     b.spell = name
     local buffs = ownBuffs
     b.active = name and buffs[name] or false
-    b.icon:SetTexture(id and ((C_Spell and C_Spell.GetSpellTexture and ns.Call(C_Spell.GetSpellTexture, id)) or (GetSpellTexture and ns.Call(GetSpellTexture, id))) or nil)
+    b.icon:SetTexture(id and ((C_Spell and C_Spell.GetSpellTexture and ns.Call(C_Spell.GetSpellTexture, id)) or (GetSpellTexture and ns.Call(GetSpellTexture, id))) or (kind == "fury" and 135962) or nil)
     b.label:SetText(name or L["BLESS_SELF_" .. kind:upper()])
     b.state:SetText(b.active and Theme.HexColor("good", L.BLESS_SELF_ON_SHORT) or Theme.HexColor("bad", L.BLESS_SELF_OFF_SHORT))
     tint(b.bg, b.active and 1 or 0, 1, name ~= nil)
@@ -735,7 +786,7 @@ end
 local function combatRefresh()
     for _, r in ipairs(rows) do
         if r:IsShown() then
-            if r.cls and r.blessing then paintRow(r) elseif r == rows[SINGLE_ROW] then paintSingleRow(r) end
+            if r.cls and r.blessing then paintRow(r) end
             for _, b in ipairs(r.fly and r.fly.buttons or {}) do if b:IsShown() and b.key then paintPlayer(b) end end
         end
     end
@@ -799,35 +850,62 @@ function Bar.Update()
         end
     end
     for _, class in ipairs(B.CLASSES) do
-        local blessing = set[class]
+        local classB = set[class]
         local units = B.classUnits[class]
         local present = units and #units > 0
-        if blessing and (present or solo) then
+        local rs = present and Bar.RowState(class) or nil
+        -- a row for every class you bless, and for classes where you only give singles
+        local singleB
+        for _, e in ipairs(rs and rs.players or {}) do if e.single and not singleB then singleB = e.blessing end end
+        local blessing = classB or singleB
+        if blessing and (present or (solo and classB)) then
             n = n + 1
             local r = rows[n]
             r.cls, r.blessing, r.absent = class, blessing, not present
-            local st, have, total, left = paintRow(r)
+            rs = paintRow(r)
+            local left = rs.left
             if present and left and (not shortest or left < shortest) then shortest = left end
             if not present then
                 setSecure(r, { type1 = false, spell1 = false, unit1 = false, type2 = false, spell2 = false, unit2 = false })
                 fillFly(n, r, {})
             else
-                local greater = B.SpellName(B.SpellFor(blessing, "greater"))
-                local single = B.SpellName(B.SpellFor(blessing, "single"))
-                local need = st.need and st.need[blessing]
-                local pool = (st.units and st.units[blessing]) or (B.status[class] and {}) or nil
-                local gUnit = greater and pickUnit(class, greater, need)
-                local sUnit = single and pickUnit(class, single, need, pool)
+                local greater = classB and B.SpellName(B.SpellFor(classB, "greater"))
+                local normal = classB and B.SpellName(B.SpellFor(classB, "single"))
+                -- right click: normal blessing on the next one missing it (class blessing
+                -- first, then a single); nobody missing: someone with the class blessing
+                local sSpell, sUnit, sPool
+                if normal and #rs.classNeed > 0 then
+                    sSpell, sPool = normal, rs.classUnits
+                    sUnit = pickUnit(class, normal, rs.classNeed, rs.classUnits)
+                else
+                    for _, e in ipairs(rs.players) do
+                        if e.single and not e.has and usable(e.unit) then
+                            sSpell = B.SpellName(B.SpellFor(e.blessing, "single")); sUnit, sPool = e.unit, { e.unit }
+                            if sSpell then break end
+                        end
+                    end
+                    if not sSpell and normal and #rs.classUnits > 0 then
+                        sSpell, sPool = normal, rs.classUnits
+                        sUnit = pickUnit(class, normal, nil, rs.classUnits)
+                    end
+                end
+                local gUnit = greater and pickUnit(class, greater, rs.classNeed)
                 setSecure(r, {
-                    type1 = (greater or single) and "spell" or nil, spell1 = greater or single, unit1 = greater and gUnit or sUnit,
-                    type2 = (single and sUnit) and "spell" or nil, spell2 = sUnit and single or nil, unit2 = sUnit,
+                    type1 = (greater or sSpell) and "spell" or nil, spell1 = greater or sSpell, unit1 = greater and gUnit or sUnit,
+                    type2 = (sSpell and sUnit) and "spell" or nil, spell2 = sUnit and sSpell or nil, unit2 = sUnit,
                 })
-                rotation(r, class, sUnit, need, pool)
+                rotation(r, class, sUnit, sPool == rs.classUnits and rs.classNeed or nil, sPool or {})
                 fillFly(n, r, classPlayers(class))
-                -- the next cast: the class with the fewest buffed, then the shortest time left;
-                -- class blessings before singles (a greater one replaces your single on that class)
-                if (have < total or (left and left < 300)) and (greater or single) then
-                    candidate(1000000 + (total - have) * 10000 - (left or 0), greater or single, greater and gUnit or sUnit, blessing)
+                -- the next cast: the class with the most missing, then the shortest time left;
+                -- class blessings first (a greater one replaces your single on that class)
+                if (#rs.classNeed > 0 or (left and left < 300)) and (greater or normal) then
+                    candidate(1000000 + #rs.classNeed * 10000 - (left or 0), greater or normal, greater and gUnit or sUnit, classB)
+                end
+                for _, e in ipairs(rs.players) do
+                    local spell = e.single and B.SpellName(B.SpellFor(e.blessing, "single"))
+                    if spell and usable(e.unit) and (not e.has or (e.left and e.left < 300)) then
+                        candidate(e.has and -(e.left or 0) or 5000, spell, e.unit, e.blessing)
+                    end
                 end
             end
             r:ClearAllPoints()
@@ -837,37 +915,15 @@ function Bar.Update()
         end
     end
     for i = n + 1, #B.CLASSES do rows[i]:Hide(); if flies[i] then flies[i]:Hide() end end
-    -- singles: one button, its pop-out lists the players
-    local singles = (IsInGroup() or B.test) and me and B.Singles(me) or {}
-    local srow = rows[SINGLE_ROW]
-    if (IsInGroup() or B.test) and me then
-        paintSingleRow(srow)
-        local list = {}
-        for _, s in ipairs(singles) do
-            list[#list + 1] = { key = s.key, blessing = s.blessing, single = true, pinned = s.pinned }
-            local spell = B.SpellName(B.SpellFor(s.blessing, "single"))
-            local has, left = B.SingleState(s.key, s.blessing)
-            if has and left and (not shortest or left < shortest) then shortest = left end
-            if spell and usable(s.member.unit) and (not has or (left and left < 300)) then
-                candidate(has and -(left or 0) or 5000, spell, s.member.unit, s.blessing)
-            end
-        end
-        fillFly(SINGLE_ROW, srow, list)
-        srow:ClearAllPoints(); srow:SetPoint("TOPLEFT", 4, -y); srow:Show()
-        y = y + ROW_H
-    else
-        srow:Hide(); flies[SINGLE_ROW]:Hide()
-    end
     -- live status strip (drawn by the game, also in combat)
     if ns.BlessNative then
         local live = {}
         if not B.test then
             for i = 1, n do
                 local r = rows[i]
-                if not r.absent then
-                    local st = B.status[r.cls]
-                    local list = (st and st.units and st.units[r.blessing]) or B.classUnits[r.cls] or {}
-                    live[#live + 1] = { row = r, units = list, blessing = r.blessing }
+                local classB = B.Me() and B.Me().set and B.Me().set[r.cls]
+                if not r.absent and classB then
+                    live[#live + 1] = { row = r, units = Bar.RowState(r.cls).classUnits, blessing = classB }
                 end
             end
         end
@@ -876,7 +932,7 @@ function Bar.Update()
     setSecure(auto, { type1 = nextCast and "spell" or nil, spell1 = nextCast and nextCast.spell, unit1 = nextCast and nextCast.unit })
     auto.left:SetText(showTimes() and shortest and fmtLeft(shortest) or "")
     auto.left:SetTextColor(Theme.Color(shortest and shortest < 300 and "warn" or "good"))
-    local empty = n == 0 and not srow:IsShown()
+    local empty = n == 0
     frame.empty:SetShown(empty)
     if empty then
         frame.empty:ClearAllPoints()
@@ -904,6 +960,8 @@ ns.On("LG_MOVERS", function() ns.AfterCombat("bless-bar", Bar.Update) end)
 ns.On("PLAYER_REGEN_ENABLED", function() ns.After(0.5, Bar.Update) end)
 ns.On("LG_READY", function()
     ns.Movers.Anchor("blessingsBar", L.BLESS_BAR, { "RIGHT", "RIGHT", -40, 120 }, WIDTH, 120, nil, { icon = "sparkles", scalable = true,
-        settings = function() ns.Window.Show("blessings") end })
+        settings = function() ns.Window.Show("blessings") end,
+        -- dragged: "auto" may open the pop-outs to the other side now
+        onFollow = function() if frame and frame:IsShown() then ns.AfterCombat("bless-bar", Bar.Update) end end })
     if B.IsPaladin() then ns.After(5, Bar.Update) end
 end)

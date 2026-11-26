@@ -233,6 +233,22 @@ local GROUPS = {
           run = function() ns.Blessings.SpecReport() end },
         { cmd = "test blesswindow", desc = "Blessings quick assign window with made-up paladins and raiders (3 min, nothing is sent or cast)",
           run = function() ns.Blessings.Test(); ns.BlessAssign.Show() end },
+        { cmd = "test blesspick", desc = "Blessings: the single blessing picker (every paladin's blessings as icons) for a made-up warrior, with the quick window (3 min, nothing is sent or cast)",
+          run = function()
+              local B = ns.Blessings
+              B.Test(); ns.BlessAssign.Show()
+              local key = B.unitKey["lgtest-warrior-1"]
+              if key and _G.LiebeGruesseBlessAssign then ns.BlessPlayers.Picker(_G.LiebeGruesseBlessAssign, key) end
+          end },
+        { cmd = "test blessjoin", desc = "Blessings: a mage and a priest join the made-up raid – the classes you do not bless yet get a blessing from you (3 min, nothing is sent or cast)",
+          run = function()
+              local B = ns.Blessings
+              B.Test()
+              local me = B.Me()
+              if me and me.set then me.set.MAGE, me.set.PRIEST = nil, nil end
+              if not B.FillNew({ MAGE = true, PRIEST = true }) then ns.Print(ns.L.BLESS_NEW_NONE) end
+              if ns.BlessingsBar then ns.BlessingsBar.Update() end
+          end },
         { cmd = "test bless", args = "[off]", desc = "Blessings page and bar with made-up paladins and raiders (3 min, nothing is sent or cast)",
           run = function(rest) if (rest or ""):lower():find("off") then ns.Blessings.StopTest() else ns.Blessings.Test() end end },
         { cmd = "test changelog", desc = "The \"what's new\" window with the last versions",
