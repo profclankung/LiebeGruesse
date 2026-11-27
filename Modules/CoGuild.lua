@@ -612,6 +612,12 @@ function Co.ClearTest()
     ns.Fire("LG_COGUILD")
 end
 
+-- sample members of /lg test partner are shown (test suite switch)
+function Co.HasTest()
+    for _, e in pairs(store()) do if e.test then return true end end
+    return false
+end
+
 -- dialog: show the key (to pass it on) or paste one
 function Co.ShowKey()
     local o = bundSettings()

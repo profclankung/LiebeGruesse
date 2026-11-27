@@ -2,6 +2,38 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.89] – 2026-11-27
+
+- change(blessings): smart assign gives every class its own blessing first (Might or Wisdom) and Kings second – one paladin = Might / Wisdom only, two = plus Kings from the one who knows it
+- change(blessings): hunters want Wisdom first, survival hunters (melee) Might; protection paladins and shaman tanks Kings, Wisdom, Might
+- fix(blessings): smart assign never gives a class the same blessing from two paladins; singles only for players who want something else than their class (feral druid, retribution paladin), no more swapped singles; running it twice changes nothing
+- feat(blessings): paladins without any addon – what they bless is read from the buffs on the players, smart assign plans them too (no Kings without 10 Protection points) and whispers them their part after combat (option "Whisper paladins without the addon")
+- change(blessings): mouse wheel skips a blessing another paladin already gives that class; picking it in a menu swaps the two
+- feat(blessings): compact view of the bar – half as wide, class and blessing icons with counts; toggle next to the lock or in Blessings › Settings
+- change(blessings): aura, seal, Righteous Fury and Oath of Light are small icons in one row on the bar – green border while on, red while off; each one can be switched off, the row disappears without any
+- fix(blessings): announce, whisper and test lines without arrows or dashes (other players saw odd characters); class names in class colors in your own chat
+- feat(quickbar): wider by default (380 px, larger text) – saved positions stay where they were
+- feat(quickbar): choose where lines open – toward the middle of the screen (default), down, up, left or right
+- feat(quickbar): display style icon + text, text only or icons only; width, spacing, scale and max lines in Settings
+- feat(quickbar): order newest/oldest first; time line, × button and "+n more" can be hidden
+- feat(quickbar): choose whether guild and whispered "!lg" questions wait in the bar or are answered by the addon
+- feat(quickbar): width slider in the Move elements editor; /lg test quicklayout
+- fix(cooldowns): keep players' bars and cooldowns when the roster briefly shows "Unknown" or someone leaves and rejoins
+- fix(cooldowns): don't drop cooldown lists from players who are not in the roster yet
+- fix(cooldowns): spells seen cast stay known when another addon's list lacks them
+- fix(cooldowns): re-ask new group members for their cooldowns instead of dropping throttled requests
+- fix(cooldowns): throttle instead of debounce, so bars update during busy raids
+- fix(cooldowns): track addon users' casts while the game holds back addon messages in boss fights
+- fix(cooldowns): restore running cooldowns and seen spells after /reload, also for players who load in later
+- fix(cooldowns): match party-frame icons by GUID and retry when frames appear late
+- perf(cooldowns): casts of group members cost one table lookup – the spell of an unknown id is looked up once, not on every cast
+- feat(tests): new Test suite page (Settings › Test suite, /lg tests) – every test grouped by module, with Run buttons, search and "Stop all tests"
+- feat(tests): tests that keep running (blessings, cooldown bars, update notice, quick actions, loot history, council session, loot master bar, boards, trade timers, partner, move elements) get a switch that shows whether they are running and turns them off
+- feat(tests): /lg test blesssmart, /lg test blesscompact
+- change(help): test commands moved out of Help & commands into the Test suite; the support card opens it
+- fix(help): stale texts (support hint, /lg test list, test bar/move descriptions) and unused locale keys removed
+- fix(partner): /lg test partner sample members can be removed again (test suite switch)
+
 ## [1.0.88] – 2026-11-26
 
 - style(blessings): the lock button of the blessing bar sits in the top right corner

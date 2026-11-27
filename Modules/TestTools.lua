@@ -72,6 +72,30 @@ function Test.ProfCooldowns() ns.ProfCD.Test(); ns.Window.Show("professions"); i
 function Test.Trade() ns.TradeTimers.Test() end
 function Test.Bar() ns.CouncilBar.testUntil = GetTime() + 120; ns.CouncilBar.Layout(); ns.After(121, ns.CouncilBar.Layout) end
 
+-- running state and "off" of the tests that keep running (test suite switches)
+function Test.BarActive() return ns.CouncilBar.testUntil ~= nil and GetTime() < ns.CouncilBar.testUntil end
+function Test.StopBar() ns.CouncilBar.testUntil = nil; ns.CouncilBar.Layout() end
+function Test.CouncilActive() local s = ns.Council.session; return s ~= nil and s.test and not s.ended end
+function Test.TradeActive() return ns.TradeTimers.test ~= nil end
+function Test.StopTrade() ns.TradeTimers.test = nil; ns.TradeTimers.Layout() end
+function Test.BoardsActive() return ns.Community.testEvents ~= nil end
+function Test.StopBoards()
+    ns.Community.testEvents, ns.Community.testPosts = nil, nil
+    ns.Window.Refresh("community")
+end
+function Test.QuickActive()
+    for _, e in ipairs(ns.QuickBar.entries or {}) do if e.test then return true end end
+    return false
+end
+-- "Move elements" off: like the second click on the button
+function Test.Lock()
+    local cd = ns.Database.Settings().cd
+    cd.locked = true
+    ns.Cooldowns.SetPreview(false)
+    ns.Movers.SetActive(false)
+    ns.Fire("LG_COOLDOWNS")
+end
+
 -- Raw talent and stat API values of the own character (to check the armory)
 function Test.Armory()
     local function raw(...)

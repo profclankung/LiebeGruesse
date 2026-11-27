@@ -35,6 +35,9 @@ local function cdSettings() return ns.Database.Settings().cd end
 
 -- groups: key, title, module (settings.modules key, optional), commands
 -- command: { cmd = "lc test", args = "[...]", desc = "...", run = fn(rest), aliases = { ... } }
+-- tests that keep running get a switch in the test suite: toggle = true,
+-- active = fn() (running?), stop = fn(), duration = seconds (ends by itself);
+-- area = guide key (test suite card), suite = false (not in the test suite)
 local GROUPS = {
     { key = "general", title = "General", commands = {
         { cmd = "", desc = "Open / close the window", run = function() ns.Window.Toggle() end },
@@ -43,6 +46,8 @@ local GROUPS = {
           run = function(rest) ns.Window.OpenSearch(rest) end, aliases = { "f" } },
         { cmd = "commands", desc = "Help & commands page in the window",
           run = function() ns.Window.Show("help") end },
+        { cmd = "tests", desc = "Test suite: try every feature alone, see and stop running tests",
+          run = function() ns.Window.Show("tests") end },
         { cmd = "guide", args = "[module]", desc = "Guide: how every module works",
           run = function(rest) ns.Guide.Open(rest) end },
         { cmd = "setup", desc = "Setup assistant: what is still open for this character (professions, main, role …)",
@@ -212,16 +217,18 @@ local GROUPS = {
     { key = "test", title = "Test everything (alone, nothing is sent)", runnable = true, commands = {
         { cmd = "test", desc = "Notification, feed, pepega death and fail-pull vote one after another",
           run = function() ns.Test.All() end },
-        { cmd = "test list", desc = "Lists every test command in the chat (also: Help & commands → Tests)",
-          run = function() ns.PrintTests() end },
+        { cmd = "test list", desc = "Lists every test command in the chat (also: /lg tests – the test suite page)",
+          run = function() ns.PrintTests() end, suite = false },
         { cmd = "test failpull", desc = "Fail-pull vote with made-up raiders (20 s)",
           run = function() ns.Test.FailVote() end },
         { cmd = "test mispull", desc = "How a mispull report looks", run = function() ns.Test.Mispull() end },
         { cmd = "test death", desc = "How a pepega death looks", run = function() ns.Test.Death() end },
         { cmd = "test consum", desc = "Scans your own flask, elixirs and food like at a ready check",
           run = function() ns.Test.Consumables() end },
-        { cmd = "test lc", desc = "Loot council session with test raiders", run = function() ns.Test.Council() end },
-        { cmd = "test cd", desc = "Cooldown bars with test players (2 min)", run = function() ns.Test.Cooldowns() end },
+        { cmd = "test lc", desc = "Loot council session with test raiders", run = function() ns.Test.Council() end,
+          toggle = true, active = function() return ns.Test.CouncilActive() end, stop = function() ns.Council.End() end },
+        { cmd = "test cd", desc = "Cooldown bars with test players (2 min)", run = function() ns.Test.Cooldowns() end,
+          toggle = true, active = function() return ns.Cooldowns.IsPreview() end, stop = function() ns.Cooldowns.SetPreview(false) end, duration = 120 },
         { cmd = "test craft", args = "[recipe]", desc = "The answer to a guild chat craft question, only for you",
           run = function(rest) ns.Test.Craft(rest) end },
         { cmd = "test stats", desc = "Reads your life statistics now and opens them", run = function() ns.Test.Life() end },
@@ -240,6 +247,18 @@ local GROUPS = {
                       if c.class == "WARRIOR" and c.p and not c.p.me and c:IsShown() then ns.BlessPlayers.ShowFly(c); return end
                   end
               end
+          end },
+        { cmd = "test blesssmart", desc = "Blessings: smart assign on the made-up raid (one paladin without the addon) – prints what every paladin gives and the whisper to the guest (3 min, nothing is sent or cast)",
+          run = function()
+              local B = ns.Blessings
+              B.Test(); B.Suggest(); B.Announce()
+          end },
+        { cmd = "test blesscompact", desc = "Blessing bar: switches between the full and the compact view (with made-up raiders, 3 min)",
+          run = function()
+              local B = ns.Blessings
+              if not B.test then B.Test() end
+              local o = B.Settings(); o.compact = not o.compact
+              ns.BlessingsBar.Update()
           end },
         { cmd = "test blessspec", desc = "Blessings: what every group member plays (talents, group role or class), which blessings he wants and what you give him",
           run = function() ns.Blessings.SpecReport() end },
@@ -262,7 +281,8 @@ local GROUPS = {
               if ns.BlessingsBar then ns.BlessingsBar.Update() end
           end },
         { cmd = "test bless", args = "[off]", desc = "Blessings page and bar with made-up paladins and raiders (3 min, nothing is sent or cast)",
-          run = function(rest) if (rest or ""):lower():find("off") then ns.Blessings.StopTest() else ns.Blessings.Test() end end },
+          run = function(rest) if (rest or ""):lower():find("off") then ns.Blessings.StopTest() else ns.Blessings.Test() end end,
+          toggle = true, active = function() return ns.Blessings.test ~= nil end, stop = function() ns.Blessings.StopTest() end, duration = 180 },
         { cmd = "test changelog", desc = "The \"what's new\" window with the last versions",
           run = function() ns.WhatsNew.Test() end },
         { cmd = "test tooltip", desc = "Your player tooltip lines at the mouse cursor (8 s)",
@@ -270,7 +290,8 @@ local GROUPS = {
         { cmd = "test armory", desc = "Prints the raw talent and stat values of your character (armory check)",
           run = function() ns.Test.Armory() end },
         { cmd = "test update", args = "[off]", desc = "How the update notice looks: toast, sidebar chip, Versions card (2 min, nothing sent)",
-          run = function(rest) ns.Versions.Test((rest or ""):lower():find("off") ~= nil) end },
+          run = function(rest) ns.Versions.Test((rest or ""):lower():find("off") ~= nil) end,
+          toggle = true, active = function() return ns.Versions.test ~= nil end, stop = function() ns.Versions.Test(true) end, duration = 120 },
         { cmd = "test guide", desc = "Checks every guide entry (page, test, commands) and opens the guide",
           run = function() ns.Guide.Test() end },
         { cmd = "test model", desc = "Race, gender and model mode of the member open in the armory",
@@ -301,7 +322,10 @@ local GROUPS = {
         { cmd = "test announce", args = "[text]", desc = "How an officer announcement looks (only for you, nothing sent)",
           run = function(rest) ns.Notify.TestAnnounce(rest) end },
         { cmd = "test quick", args = "[off]", desc = "Sample lines in the quick actions bar (a click only prints, nothing is sent)",
-          run = function(rest) if (rest or ""):lower():find("off") then ns.QuickBar.Clear() else ns.QuickBar.Test() end end },
+          run = function(rest) if (rest or ""):lower():find("off") then ns.QuickBar.Clear() else ns.QuickBar.Test() end end,
+          toggle = true, active = function() return ns.Test.QuickActive() end, stop = function() ns.QuickBar.Clear() end, duration = 120 },
+        { cmd = "test quicklayout", desc = "Four sample lines in the quick actions bar's current look, plus its direction, style and what it shows",
+          run = function() ns.QuickBar.TestLayout() end },
         { cmd = "test messages", desc = "Every message text with sample values (only for you)",
           run = function() ns.Messages.Test() end },
         { cmd = "test feed", desc = "A guild feed notification", run = function() ns.Test.Feed() end },
@@ -314,25 +338,31 @@ local GROUPS = {
         { cmd = "test setup", desc = "The setup assistant with every row open (buttons do nothing)",
           run = function() ns.Setup.Show(true) end },
         { cmd = "test lchistory", args = "[off]", desc = "Sample loot history of two raid evenings (only for you, not stored) – try the evening filter and deleting",
-          run = function(rest) ns.Council.TestHistory((rest or ""):lower():find("off") ~= nil) end },
+          run = function(rest) ns.Council.TestHistory((rest or ""):lower():find("off") ~= nil) end,
+          toggle = true, active = function() return #ns.Council.testHistory > 0 end, stop = function() ns.Council.TestHistory(true) end },
         { cmd = "test profsync", desc = "The profession sync hint window and chat lines with sample professions (nothing stored)",
           run = function() ns.ProfSync.Test() end },
         { cmd = "test boards", desc = "Sample entries on all community leaderboards and the quote of the week (2 min, nothing stored or sent)",
-          run = function() ns.CommunityFun.Test() end },
+          run = function() ns.CommunityFun.Test() end,
+          toggle = true, active = function() return ns.Test.BoardsActive() end, stop = function() ns.Test.StopBoards() end, duration = 120 },
         { cmd = "test badge", desc = "The notification for a new badge (nothing stored)", run = function() ns.Badges.Test() end },
         { cmd = "test greet", desc = "Shows the login greeting that would be written to guild chat (nothing sent)",
           run = function() ns.Greet.Test() end },
         { cmd = "test profcd", desc = "Profession cooldowns with sample entries", run = function() ns.Test.ProfCooldowns() end },
         { cmd = "test trade", args = "[raw]", desc = "Trade expiration timers with sample items (1 min); raw: prints the tooltip lines of your bags",
-          run = function(rest) if (rest or ""):lower():find("raw") then ns.TradeTimers.Debug() else ns.Test.Trade() end end },
+          run = function(rest) if (rest or ""):lower():find("raw") then ns.TradeTimers.Debug() else ns.Test.Trade() end end,
+          toggle = true, active = function() return ns.Test.TradeActive() end, stop = function() ns.Test.StopTrade() end, duration = 60 },
         { cmd = "test who", desc = "Partner /who: which windows listen and what was closed (after the who window popped up)",
           run = function() ns.CoGuild.WhoReport() end },
         { cmd = "test partner", desc = "Partner guild page with sample members",
-          run = function() ns.CoGuild.Test(); ns.Window.Show("coguild") end },
+          run = function() ns.CoGuild.Test(); ns.Window.Show("coguild") end,
+          toggle = true, active = function() return ns.CoGuild.HasTest() end, stop = function() ns.CoGuild.ClearTest() end },
         { cmd = "test security", desc = "Runs forged feed, loot history and Bund messages through the checks (nothing stored or sent)",
           run = function() ns.Test.Security() end },
-        { cmd = "test bar", desc = "Shows the loot master bar", run = function() ns.Test.Bar() end },
-        { cmd = "test move", desc = "Unlock mode for all elements", run = function() ns.Test.Unlock() end },
+        { cmd = "test bar", desc = "Shows the loot master bar (2 min)", run = function() ns.Test.Bar() end,
+          toggle = true, active = function() return ns.Test.BarActive() end, stop = function() ns.Test.StopBar() end, duration = 120 },
+        { cmd = "test move", desc = "Unlock mode for all elements (like \"Move elements\" at the top)", run = function() ns.Test.Unlock() end,
+          toggle = true, active = function() return ns.Movers.active end, stop = function() ns.Test.Lock() end },
     } },
     { key = "chat", title = "Chat commands (also without addon)", chat = true, commands = {
         { cmd = "!lg", args = "<recipe or item link>",

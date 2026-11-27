@@ -29,7 +29,7 @@ Guide.LIST = {
           { "Log in", "Your addon reads your own character – gear, talents, professions, attunements – and shares it with guild members who use the addon." },
           { "Open /lg", "Pages are grouped in the sidebar. Search above the pages finds any page, setting, command, member or recipe." },
           { "Hover, then click", "Almost everything explains itself on mouseover. A left click does the action right where you are." },
-          { "Try it alone", "Every feature has a test under /lg test … – test data is never sent or saved. /lg setup shows what is still open." },
+          { "Try it alone", "Every feature has a test – Settings › Test suite (/lg tests) runs them and switches running ones off. Test data is never sent or saved. /lg setup shows what is still open." },
       },
       where = { { "window", "Window", "/lg or the minimap button" }, { "link", "Search", "Sidebar: everything · page header: only this page" },
           { "hud", "HUD", "Move elements (top bar) – arrow keys move pixel by pixel" },
@@ -37,7 +37,7 @@ Guide.LIST = {
       tips = { "Modules are on by default; switching one off only affects you.", "A module's own settings are in its page, tab “Settings” (gear on the Modules page).", "Data of other members is as fresh as their last login with the addon.",
           "Lua error? Copy it completely and send it to the guild lead." },
       shared = "Only data about your own character. Everything from others is checked (sender, time, content) before it is stored.",
-      cmds = { "/lg", "/lg find [text]", "/lg setup", "/lg modules", "/lg test list" } },
+      cmds = { "/lg", "/lg find [text]", "/lg setup", "/lg modules", "/lg tests", "/lg test list" } },
 
     { key = "roster", section = "guild", icon = "users", name = "Roster & Armory", page = "roster",
       who = { "Everyone" }, test = "test compare",

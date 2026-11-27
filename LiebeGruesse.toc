@@ -4,7 +4,7 @@
 ## Notes-enUS: Guild tools for Liebe Grüße: roster, inspect, feed, loot council, cooldown tracker and version check.
 ## Author: Liebe Grüße
 ## X-Curse-Project-ID: 1828767
-## Version: 1.0.88
+## Version: 1.0.89
 ## SavedVariables: LiebeGruesseDB
 ## OptionalDeps: PriceGraphForever, Auctionator, TradeSkillMaster, LibSharedMedia-3.0
 ## IconTexture: Interface\AddOns\LiebeGruesse\Media\icon
@@ -87,6 +87,7 @@ Modules\ModulesPage.lua
 Modules\Settings.lua
 Modules\Guide.lua
 Modules\Help.lua
+Modules\TestSuite.lua
 Modules\Credits.lua
 Modules\WhatsNew.lua
 Modules\TestTools.lua

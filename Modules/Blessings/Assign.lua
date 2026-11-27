@@ -29,8 +29,7 @@ end
 local function cellMenu(anchor, p, class)
     local items = {}
     for _, b in ipairs(B.LIST) do
-        local can = p.can and p.can[b.key]
-        local note = (p.addon and can == 0) and Theme.HexColor("muted", "  " .. L.BLESS_NOT_KNOWN) or ""
+        local note = B.MenuNote(p, class, b.key)
         items[#items + 1] = { value = b.key, text = blessIcon(b.key) .. "  " .. B.Name(b.key) .. note }
     end
     items[#items + 1] = { value = "none", text = Theme.HexColor("muted", L.BLESS_NONE) }

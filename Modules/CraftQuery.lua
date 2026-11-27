@@ -345,8 +345,8 @@ end
 Craft.FirstLink = firstLink
 
 local function say(text, channel, target, asked, asker)
-    -- ask first: the line waits in the quick actions bar, a click sends it
-    if ns.QuickBar.AskFirst() then
+    -- ask first: the line waits in the quick actions bar (guild/whisper questions can be switched off there), a click sends it
+    if ns.QuickBar.AskFirst(channel) then
         local who = asker and Names.Display(asker) or (target and Names.Display(target)) or "?"
         local whisper = channel == "WHISPER"
         ns.QuickBar.Add({ key = "craft-q-" .. (target or channel) .. "-" .. tostring(asked or GetTime()), group = "craft", icon = "hammer",

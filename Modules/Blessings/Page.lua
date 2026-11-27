@@ -15,8 +15,7 @@ end
 local function blessingMenu(anchor, p, class)
     local items = {}
     for _, b in ipairs(B.LIST) do
-        local can = p.can and p.can[b.key]
-        local note = (p.addon and can == 0) and Theme.HexColor("muted", "  " .. L.BLESS_NOT_KNOWN) or ""
+        local note = B.MenuNote(p, class, b.key)
         items[#items + 1] = { value = b.key, text = ("|T%s:16:16:0:0:64:64:5:59:5:59|t  %s%s"):format(B.Icon(b.key), B.Name(b.key), note) }
     end
     items[#items + 1] = { value = "none", text = Theme.HexColor("muted", L.BLESS_NONE) }
@@ -35,6 +34,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         bar:Toggle(L.BLESS_LIVE, function() return o().live ~= false end, function(v) o().live = v; barUpdate() end, { tip = L.BLESS_LIVE_TIP })
         bar:Toggle(L.BLESS_AUTO_NEW, function() return o().autoNew ~= false end, function(v) o().autoNew = v end, { tip = L.BLESS_AUTO_NEW_TIP })
         local look = form:Section(L.BLESS_LOOK)
+        look:Toggle(L.BLESS_COMPACT, function() return o().compact == true end, function(v) o().compact = v; barUpdate() end, { tip = L.BLESS_COMPACT_TIP })
         look:Toggle(L.BLESS_OPT_PLAYERS, function() return o().players ~= false end, function(v) o().players = v; barUpdate() end, { tip = L.BLESS_OPT_PLAYERS_TIP })
         look:Segment(L.BLESS_OPT_SIDE, { { value = "auto", text = L.BLESS_SIDE_AUTO }, { value = "left", text = L.BLESS_SIDE_LEFT }, { value = "right", text = L.BLESS_SIDE_RIGHT } },
             function() return o().side or "auto" end, function(v) o().side = v; barUpdate() end, { width = 210, tip = L.BLESS_OPT_SIDE_TIP })
@@ -53,6 +53,7 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
         selfB:Toggle(L.BLESS_SELF_FURY, function() return o().fury == true end, function(v) o().fury = v; barUpdate() end, { tip = L.BLESS_SELF_FURY_TIP_OPT })
         selfB:Toggle(L.BLESS_SELF_OATH_OPT, function() return o().oath ~= false end, function(v) o().oath = v; barUpdate() end, { tip = L.BLESS_SELF_OATH_OPT_TIP })
         local sync = form:Section(L.BLESS_SYNC)
+        sync:Toggle(L.BLESS_WHISPER_GUESTS, function() return o().whisperGuests ~= false end, function(v) o().whisperGuests = v end, { tip = L.BLESS_WHISPER_GUESTS_TIP })
         sync:Toggle(L.BLESS_FREE, function() return o().freeAssign end, function(v) o().freeAssign = v; B.Share(B.Me()) end, { tip = L.BLESS_FREE_TIP })
         -- PallyPower: guests without this addon (read) and sending to them (sync)
         sync:Toggle(L.BLESS_PP_READ, function() return o().ppRead end, function(v) o().ppRead = v; if v then B.Request() end end, { tip = L.BLESS_PP_READ_TIP })

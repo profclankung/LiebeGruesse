@@ -1,12 +1,13 @@
 -- "Help & commands" page: search, area tabs, quick start tiles, one grouped
 -- command table (run / put into chat) and side cards with chat commands,
 -- tips and support. Built from the registry in Core/Slash.lua (ns.Commands).
+-- The "/lg test …" commands have their own page (Modules/TestSuite.lua).
 local _, ns = ...
 local UI, Theme, L = ns.UI, ns.Theme, ns.L
 
 local Help = {}
 ns.Help = Help
-local state = { area = "all", query = "", tests = false }
+local state = { area = "all", query = "" }
 
 -- area tabs → command groups
 local AREAS = {
@@ -14,11 +15,9 @@ local AREAS = {
     { key = "guild", groups = { roster = true, community = true } }, { key = "raid", groups = { lc = true, raid = true } },
     { key = "cd", groups = { cd = true } }, { key = "crafts", groups = { crafts = true } },
     { key = "partner", groups = { partner = true } }, { key = "chat", groups = { chat = true } },
-    { key = "test", groups = { test = true } },
 }
 local AREA_TITLE = { all = "HELP_AREA_ALL", general = "HELP_AREA_GENERAL", guild = "HELP_AREA_GUILD", raid = "HELP_AREA_RAID",
-    cd = "HELP_AREA_CD", crafts = "HELP_AREA_CRAFTS", partner = "HELP_AREA_PARTNER", chat = "HELP_AREA_CHAT",
-    test = "HELP_AREA_TEST" }
+    cd = "HELP_AREA_CD", crafts = "HELP_AREA_CRAFTS", partner = "HELP_AREA_PARTNER", chat = "HELP_AREA_CHAT" }
 
 local QUICK = {
     { icon = "users", title = "PAGE_ROSTER", sub = "HELP_Q_ROSTER", cmd = "roster", page = "roster" },
@@ -75,7 +74,7 @@ end
 -- Page
 ---------------------------------------------------------------------------
 UI.AddPage("help", L.PAGE_HELP, 97, function(content, page)
-    -- toolbar: search · area tabs · test commands
+    -- toolbar: search · area tabs
     -- the search sits in the page header
     page.searchHint = L.HELP_SEARCH
     local tabs = {}
@@ -110,15 +109,11 @@ UI.AddPage("help", L.PAGE_HELP, 97, function(content, page)
     local quickHead = UI.Text(body, 11, "bronze", "LEFT", nil, true)
     quickHead:SetPoint("TOPLEFT", 0, 0)
     quickHead:SetText(ns.Upper(L.HELP_QUICK))
-    -- test commands: switch on the quick start line, right
-    local tests = UI.Check(body, L.HELP_TESTS, function() return state.tests end, function(v) state.tests = v; Help.Fill() end)
     page.Search = function(text)
         state.query = (text or ""):lower()
         Help.Fill()
-        -- nothing in this area: look in all areas, then in the test commands
+        -- nothing in this area: look in all areas
         if state.query ~= "" and Help.hits == 0 and state.area ~= "all" then bar:Select("all") end
-        if state.query ~= "" and Help.hits == 0 and not state.tests then state.tests = true; tests:Refresh(); Help.Fill()
-            if Help.hits == 0 then state.tests = false; tests:Refresh(); Help.Fill() end end
         return Help.hits
     end
     local tiles = {}
@@ -220,7 +215,7 @@ UI.AddPage("help", L.PAGE_HELP, 97, function(content, page)
     local supportCard = card(body, L.HELP_SUPPORT)
     supportCard.text = UI.Text(supportCard, 12, "textDim"); supportCard.text:SetWordWrap(true); supportCard.text:SetJustifyV("TOP")
     supportCard.text:SetText(L.HELP_SUPPORT_TEXT)
-    supportCard.test = UI.Button(supportCard, L.HELP_TEST_ALL, 130, 26, function() if SlashCmdList.LIEBEGRUESSE then SlashCmdList.LIEBEGRUESSE("test") end end, "sparkles")
+    supportCard.test = UI.Button(supportCard, L.PAGE_TESTS, 130, 26, function() ns.Window.Show("tests") end, "badge-check")
     supportCard.credits = UI.Button(supportCard, L.PAGE_CREDITS, 110, 26, function() ns.Window.Show("credits") end, "star")
 
     local function placeText(fs, x, y, w)
@@ -249,10 +244,7 @@ UI.AddPage("help", L.PAGE_HELP, 97, function(content, page)
             t:SetPoint("TOPLEFT", body, "TOPLEFT", col * (tw + 10), -20 - rowN * (th + 10))
             t:SetSize(tw, th)
         end
-        local y = 20 + math.ceil(#tiles / perRow) * (th + 10) - 4
-        tests:ClearAllPoints()
-        tests:SetPoint("TOPLEFT", body, "TOPLEFT", math.max(0, mainW - 150), -y + 2)
-        y = y + 26
+        local y = 20 + math.ceil(#tiles / perRow) * (th + 10) + 6
 
         -- table
         tableBox:ClearAllPoints()
@@ -264,15 +256,11 @@ UI.AddPage("help", L.PAGE_HELP, 97, function(content, page)
         Help.hits, Help.firstY = 0, nil
         local ty, nh, nr = 4, 0, 0
         for _, g in ipairs(ns.Commands) do
-            local showGroup = (g.key ~= "test" or state.tests) and (not area or not area.groups or area.groups[g.key])
-            if g.key == "test" and state.tests and state.area ~= "all" then showGroup = true end
-            if g.key == "test" and state.area == "test" then showGroup = true end   -- the "Tests" tab: the whole test suite
+            -- the tests are on their own page (test suite)
+            local showGroup = g.key ~= "test" and (not area or not area.groups or area.groups[g.key])
             if showGroup then
                 local list = {}
-                for _, c in ipairs(g.commands) do
-                    local text = ns.CommandText(c, g)
-                    list[#list + 1] = c
-                end
+                for _, c in ipairs(g.commands) do list[#list + 1] = c end
                 if #list > 0 then
                     nh = nh + 1
                     local h = headLine(nh)

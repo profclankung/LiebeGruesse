@@ -6,9 +6,10 @@
 --   the next one missing it (also a single blessing).
 -- Hovering a class button pops out its players: what you give each of them,
 -- time left; left click greater, right click normal, mouse wheel sets a single.
--- On top: aura, seal and Righteous Fury buttons (optional), "Cast next" (the
--- next missing blessing) and the header with page, quick window, smart assign
--- and lock. Every cast is one click (secure buttons); the pop-outs open in
+-- On top: the header with page, quick window, smart assign, compact view and
+-- lock, a row of small state icons (aura, seal, Righteous Fury, Oath of Light –
+-- each optional, green while on) and "Cast next" (the next missing blessing).
+-- Compact view: half as wide, class and blessing icons with counts only. Every cast is one click (secure buttons); the pop-outs open in
 -- combat too (secure snippets), their content is set outside of combat.
 local _, ns = ...
 local UI, Theme, L = ns.UI, ns.Theme, ns.L
@@ -17,6 +18,7 @@ local Bar = {}
 ns.BlessingsBar = Bar
 
 local WIDTH, ROW_H, HEAD_H = 168, 30, 24
+local COMPACT_W, ICON_S, ICON_S_COMPACT = 84, 24, 17
 local FLY_W, PROW_H, MAX_PLAYERS = 170, 26, 15
 local frame, auto, rows = nil, nil, {}
 local selfButtons = {}                     -- aura / seal / fury
@@ -24,6 +26,8 @@ local flies = {}                           -- [row index] = pop-out frame with p
 
 local function inCombat() return InCombatLockdown and InCombatLockdown() end
 local function opt() return B.Settings() end
+local function compact() return opt().compact == true end
+function Bar.Width() return compact() and COMPACT_W or WIDTH end
 -- side the pop-outs open to: "auto" = toward the middle of the screen
 function Bar.Side()
     local side = opt().side
@@ -388,6 +392,19 @@ local function rowTexts(r, withClass)
     r.left = UI.Text(r, 13, "good", "RIGHT")
     r.left:SetPoint("RIGHT", -6, 0)
 end
+-- full: class · blessing · count … time; compact: class · blessing · count
+local function layoutRow(r)
+    local c = compact()
+    r:SetWidth(Bar.Width() - 8)
+    local s = c and 16 or 20
+    r.class:SetSize(s, s)
+    r.bless:SetSize(s, s)
+    r.class:ClearAllPoints(); r.class:SetPoint("LEFT", c and 3 or 6, 0)
+    r.bless:ClearAllPoints(); r.bless:SetPoint("LEFT", r.class, "RIGHT", c and 2 or 4, 0)
+    r.count:ClearAllPoints()
+    if c then r.count:SetPoint("RIGHT", -4, 0) else r.count:SetPoint("LEFT", r.bless, "RIGHT", 8, 0) end
+    r.left:SetShown(not c)
+end
 
 -- player buttons of one pop-out (created on demand, outside of combat)
 local function playerButton(fly, i)
@@ -476,7 +493,9 @@ local function makeRow(i)
             GameTooltip:SetText(ns.ClassName(self.cls), cr, cg, cb)
             local rs = Bar.RowState(self.cls)
             if self.blessing and B.Me() and B.Me().set and B.Me().set[self.cls] then
-                GameTooltip:AddLine(blessIcon(self.blessing, 14) .. " " .. (B.Name(self.blessing) or ""), 1, 0.82, 0)
+                -- compact view: count and time only here
+                local extra = compact() and rs.total > 0 and ("  " .. countText(rs.have, rs.total, rs.estimated) .. "  " .. fmtLeft(rs.left)) or ""
+                GameTooltip:AddLine(blessIcon(self.blessing, 14) .. " " .. (B.Name(self.blessing) or "") .. extra, 1, 0.82, 0)
             end
             if self.absent then
                 GameTooltip:AddLine(L.BLESS_ROW_ABSENT, 0.6, 0.6, 0.6)
@@ -528,24 +547,21 @@ local function makeRow(i)
     return r
 end
 
--- aura / seal / fury: one secure button each
+-- aura / seal / fury / oath: one small secure icon each, in one row
 local function makeSelfButton(kind)
-    local b = CreateFrame("Button", "LiebeGruesseBless" .. kind:sub(1, 1):upper() .. kind:sub(2), frame, "SecureActionButtonTemplate")
-    b:SetSize(WIDTH - 8, ROW_H - 4)
+    local b = CreateFrame("Button", "LiebeGruesseBless" .. kind:sub(1, 1):upper() .. kind:sub(2), frame, "SecureActionButtonTemplate, BackdropTemplate")
+    b:SetSize(ICON_S, ICON_S)
     b:RegisterForClicks("AnyUp", "AnyDown")
     b.kind = kind
-    b.bg = b:CreateTexture(nil, "BACKGROUND"); b.bg:SetTexture(Theme.WHITE); b.bg:SetAllPoints()
-    b.base = UI.Fill(b, "rowAlt", "BACKGROUND"); b.base:SetAllPoints(); b.base:SetDrawLayer("BACKGROUND", -1)
-    b.hl = UI.Fill(b, "hover", "HIGHLIGHT"); b.hl:SetAllPoints()
-    b.icon = b:CreateTexture(nil, "ARTWORK"); b.icon:SetSize(20, 20); b.icon:SetPoint("LEFT", 6, 0)
+    UI.Skin(b, "rowAlt", "border")
+    b.icon = b:CreateTexture(nil, "ARTWORK"); b.icon:SetPoint("TOPLEFT", 2, -2); b.icon:SetPoint("BOTTOMRIGHT", -2, 2)
     b.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-    b.state = UI.Text(b, 11, "muted", "RIGHT"); b.state:SetPoint("RIGHT", -6, 0)
-    b.label = UI.Text(b, 12, "text"); b.label:SetPoint("LEFT", b.icon, "RIGHT", 8, 0); b.label:SetPoint("RIGHT", b.state, "LEFT", -4, 0)
-    b.label:SetWordWrap(false)
+    b.hl = UI.Fill(b, "hover", "HIGHLIGHT"); b.hl:SetAllPoints()
     b:SetScript("OnEnter", function(self)
+        local state = self.active and Theme.HexColor("good", L.BLESS_SELF_ON) or Theme.HexColor("bad", L.BLESS_SELF_OFF)
+        if kind == "oath" then state = (self.target or Theme.HexColor("muted", L.BLESS_OATH_YOUR_TARGET)) .. (self.target and ("  " .. state) or "") end
         UI.Tooltip(self, self.spell or L["BLESS_SELF_" .. kind:upper()], {
-            self.active and Theme.HexColor("good", L.BLESS_SELF_ON) or Theme.HexColor("bad", L.BLESS_SELF_OFF),
-            kind == "fury" and L.BLESS_SELF_FURY_TIP or kind == "oath" and L.BLESS_SELF_OATH_TIP or L.BLESS_SELF_WHEEL_TIP })
+            state, kind == "fury" and L.BLESS_SELF_FURY_TIP or kind == "oath" and L.BLESS_SELF_OATH_TIP or L.BLESS_SELF_WHEEL_TIP })
     end)
     -- oath: wheel = next player (tanks first)
     if kind == "oath" then
@@ -627,6 +643,14 @@ local function create()
     frame.smart = smart
     local lock = ns.Movers.LockButton("blessingsBar", frame, head, 22)
     lock:SetPoint("RIGHT")   -- top right corner
+    local narrow = UI.IconButton(head, "arrow-left-right", 22, function()
+        if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
+        opt().compact = not compact()
+        Bar.Update()
+    end)
+    narrow:SetPoint("RIGHT", lock, "LEFT", -3, 0)
+    narrow.tip, narrow.tipLines = L.BLESS_COMPACT, { L.BLESS_COMPACT_TIP }
+    frame.head, frame.open, frame.quick, frame.narrow = head, open, quick, narrow
 
     for _, kind in ipairs({ "aura", "seal", "fury", "oath" }) do makeSelfButton(kind) end
 
@@ -833,6 +857,13 @@ local function furyName()
     end
     return FURY_NAMES[1]
 end
+-- state of a self icon: green border while on, red while off, grey without a target
+local function paintState(b, active, known)
+    local role = not known and "border" or (active and "good" or "bad")
+    b:SetBackdropBorderColor(Theme.Color(role))
+    b.icon:SetDesaturated(known and not active or false)
+    b.icon:SetAlpha((known and not active) and 0.6 or 1)
+end
 -- self buff buttons (aura / seal / fury): which one, cast attributes, green while on
 local function paintOath(b, combat)
     local name, id, known = Bar.OathSpell()
@@ -843,14 +874,8 @@ local function paintOath(b, combat)
     b.spell = name
     b.active = m and readOath(not combat and m.unit or nil, key, name) or false
     b.icon:SetTexture((C_Spell and C_Spell.GetSpellTexture and ns.Call(C_Spell.GetSpellTexture, id)) or (GetSpellTexture and ns.Call(GetSpellTexture, id)) or 135981)
-    b.label:SetText(m and ns.ColorName(m.name, m.class) or (name .. Theme.HexColor("muted", " · " .. L.BLESS_OATH_YOUR_TARGET)))
-    if m then
-        b.state:SetText(b.active and Theme.HexColor("good", L.BLESS_SELF_ON_SHORT) or Theme.HexColor("bad", L.BLESS_SELF_OFF_SHORT))
-        tint(b.bg, b.active and 1 or 0, 1, true)
-    else
-        b.state:SetText("")
-        tint(b.bg, 0, 1, false)
-    end
+    b.target = m and ns.ColorName(m.name, m.class) or nil
+    paintState(b, b.active, m ~= nil)
     if not combat then setSecure(b, { type1 = "spell", spell1 = name, unit1 = unit }) end
     return true
 end
@@ -867,9 +892,7 @@ local function paintSelf(kind, b, combat)
     local buffs = ownBuffs
     b.active = name and buffs[name] or false
     b.icon:SetTexture(id and ((C_Spell and C_Spell.GetSpellTexture and ns.Call(C_Spell.GetSpellTexture, id)) or (GetSpellTexture and ns.Call(GetSpellTexture, id))) or (kind == "fury" and 135962) or nil)
-    b.label:SetText(name or L["BLESS_SELF_" .. kind:upper()])
-    b.state:SetText(b.active and Theme.HexColor("good", L.BLESS_SELF_ON_SHORT) or Theme.HexColor("bad", L.BLESS_SELF_OFF_SHORT))
-    tint(b.bg, b.active and 1 or 0, 1, name ~= nil)
+    paintState(b, b.active, name ~= nil)
     if not combat then setSecure(b, { type1 = name and "spell" or nil, spell1 = name, unit1 = "player" }) end
     return name ~= nil
 end
@@ -918,20 +941,35 @@ function Bar.Update()
     local set = me and me.set or {}
     -- solo every assigned class gets a row, so you can see and change your plan
     local solo = not IsInGroup() and not B.test
+    local c = compact()
+    local width = Bar.Width()
+    frame:SetWidth(width)
+    -- compact: page and quick window stay reachable through the page and the mover menu
+    frame.open:SetShown(not c)
+    frame.quick:SetShown(not c)
+    frame.smart:ClearAllPoints()
+    if c then frame.smart:SetPoint("LEFT") else frame.smart:SetPoint("LEFT", frame.quick, "RIGHT", 3, 0) end
     local y = HEAD_H + 4
-    -- self buffs on top
+    -- self buffs on top: one row of icons, hidden when none is switched on
+    local size = c and ICON_S_COMPACT or ICON_S
+    local x, icons = 4, 0
     for _, kind in ipairs({ "aura", "seal", "fury", "oath" }) do
         local b = selfButtons[kind]
         local want = o[kind] == true
         if kind == "oath" then want = o.oath ~= false end   -- on by default, shown only when known
         local on = want and B.IsPaladin() or (B.test and want)
         if on and paintSelf(kind, b, false) then
-            b:ClearAllPoints(); b:SetPoint("TOPLEFT", 4, -y); b:Show()
-            y = y + ROW_H - 2
+            b:SetSize(size, size)
+            b:ClearAllPoints(); b:SetPoint("TOPLEFT", x, -y); b:Show()
+            x = x + size + 3
+            icons = icons + 1
         else
             b:Hide()
         end
     end
+    if icons > 0 then y = y + size + 4 end
+    auto:SetWidth(width - 8)
+    auto.label:SetShown(not c)
     auto:ClearAllPoints(); auto:SetPoint("TOPLEFT", 4, -y)
     y = y + 26 + 4
     local n = 0
@@ -955,6 +993,7 @@ function Bar.Update()
             n = n + 1
             local r = rows[n]
             r.cls, r.blessing, r.absent = class, blessing, not present
+            layoutRow(r)
             rs = paintRow(r)
             local left = rs.left
             if present and left and (not shortest or left < shortest) then shortest = left end
@@ -1034,6 +1073,8 @@ function Bar.Update()
         y = y + 44
     end
     frame:SetHeight(y + 2)
+    -- "Move elements" shows the bar's real size
+    if Bar.holder then Bar.holder:SetSize(width, y + 2) end
     frame:Show()
 end
 
@@ -1050,7 +1091,7 @@ ns.On("LG_BLESSINGS", function() Bar.Update() end)
 ns.On("LG_MOVERS", function() ns.AfterCombat("bless-bar", Bar.Update) end)
 ns.On("PLAYER_REGEN_ENABLED", function() ns.After(0.5, Bar.Update) end)
 ns.On("LG_READY", function()
-    ns.Movers.Anchor("blessingsBar", L.BLESS_BAR, { "RIGHT", "RIGHT", -40, 120 }, WIDTH, 120, nil, { icon = "sparkles", scalable = true,
+    Bar.holder = ns.Movers.Anchor("blessingsBar", L.BLESS_BAR, { "RIGHT", "RIGHT", -40, 120 }, WIDTH, 120, nil, { icon = "sparkles", scalable = true,
         settings = function() ns.Window.Show("blessings") end,
         -- dragged: "auto" may open the pop-outs to the other side now
         onFollow = function() if frame and frame:IsShown() then ns.AfterCombat("bless-bar", Bar.Update) end end })

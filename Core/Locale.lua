@@ -400,7 +400,6 @@ local enUS6 = {
     LIFE_NEED_TARGET = "Target a nearby player first (\"Me\" shows your own).", LIFE_TOO_LATE = "Answer came too late – click Refresh.",
     LIFE_NO_DATA = "The game sent no statistics – click Refresh.", LIFE_TIMEOUT = "No answer after 15 s – move closer and click Refresh.",
     PAGE_HELP = "Help & commands",
-    HELP_INTRO = "All commands start with /lg (or /liebegruesse). In chat, \"/lg help lc\" shows the commands of one module (lc, cd, crafts, community, roster, chat). Click a command to put it into the chat box.",
     HELP_CLICK = "Click: put into the chat box", HELP_MODULE_OFF = "This module is switched off in the settings.",
     SET_TIP_CRAFTERS = "Crafters in item tooltips", SET_TIP_CRAFTERS_TIP = "Shows which guild members can craft an item, and who already knows a recipe item.",
 }
@@ -481,7 +480,7 @@ local enUS9 = {
     MOVE_DRAG_HINT = "Drag to move", MOVE_COMBAT = "Elements can't be moved in combat.",
     BLESS_AUTO_FIRST = "Blessings assigned automatically. Mouse wheel on a row changes one, right-click Auto Assign redoes all.",
     PAGE_CREDITS = "Credits",
-    HELP_SEARCH = "Search command or keyword …", HELP_TESTS = "Test commands", HELP_QUICK = "Quick start", HELP_OPEN = "Open",
+    HELP_SEARCH = "Search command or keyword …", HELP_QUICK = "Quick start", HELP_OPEN = "Open",
     HELP_AREA_ALL = "All", HELP_AREA_GENERAL = "General", HELP_AREA_GUILD = "Guild", HELP_AREA_LC = "Loot Council",
     HELP_AREA_CD = "Cooldowns", HELP_AREA_CRAFTS = "Professions", HELP_AREA_PARTNER = "Partner", HELP_AREA_CHAT = "Chat",
     HELP_Q_ROSTER = "Gear, professions, armory and compare", HELP_Q_LC = "Queue items, start a session, vote",
@@ -491,8 +490,8 @@ local enUS9 = {
     HELP_TIP2 = "Alt-click an item in your bags to queue it for the loot council.",
     HELP_TIP3 = "Hold Shift on a player to see the guild lines when \"Only while holding Shift\" is on.",
     HELP_TIP4 = "While moving elements, the arrow keys move them pixel by pixel.",
-    HELP_SUPPORT = "Problems?", HELP_SUPPORT_TEXT = "Copy Lua errors completely and send them to the guild leaders. With /lg test you can try everything alone – nothing is sent.",
-    HELP_TEST_ALL = "Test everything", HELP_NOTHING = "No command matches.",
+    HELP_SUPPORT = "Problems?", HELP_SUPPORT_TEXT = "Copy Lua errors completely and send them to the guild leaders. The test suite tries every feature alone – nothing is sent or saved.",
+    HELP_NOTHING = "No command matches.",
     CREDITS_GUILD = "Made by the guild Liebe Grüße – for the guild and everybody raiding with us.",
     CREDITS_VERSION = "Version %s · for World of Warcraft: Forever", CREDITS_MAPS = "Map art", CREDITS_MAPS_COUNT = "%d maps",
     CREDITS_MAP_PAGE = "Header: %s", CREDITS_SETTINGS = "Settings",
@@ -756,7 +755,6 @@ local enUS10 = {
     BADGE_OWL = "Night Owl", BADGE_OWL_TIP = "Days with a login between 2:00 and 5:59.",
     BADGE_EARLY = "Early Bird", BADGE_EARLY_TIP = "Days with a login between 6:00 and 6:59.",
     BADGE_LOYAL = "Loyal", BADGE_LOYAL_TIP = "Login days in a row.",
-    HELP_AREA_TEST = "Tests",
     BOARD_TIP_PERIOD = "Counted from what addon users in the guild recorded – in the chosen period (week, month or all).",
     BOARD_TIP_FAILPULL = "After a boss wipe in a guild group everyone with the addon votes who pulled. A name counts when it gets at least 2 votes and at least 30 % of the voters. One point per wipe.",
     BOARD_TIP_MISPULL = "Reported by hand with “Report a mispull” (e.g. trash pulled by accident). One point per report.",
@@ -961,6 +959,28 @@ local enUS14 = {
 }
 for k, v in pairs(enUS14) do enUS[k] = v end
 
+-- 1.0.88: quick actions bar – what it shows and how it looks
+local enUS14b = {
+    QB_SHOW_GUILD = "Guild chat questions wait in the bar", QB_SHOW_WHISPER = "Whispered questions wait in the bar",
+    QB_SHOW_GUILD_TIP = "\"!lg\" in guild chat from players without the addon. Off: the addon answers them itself.",
+    QB_SHOW_WHISPER_TIP = "\"!lg\" whispered to you by players without the addon. Off: the addon answers them itself.",
+    QB_LOOK = "Quick actions look", QB_GROW = "Lines open", QB_GROW_auto = "Toward the middle", QB_GROW_down = "Down",
+    QB_GROW_up = "Up", QB_GROW_right = "Right", QB_GROW_left = "Left",
+    QB_GROW_TIP = "Where further lines go from the first one. Toward the middle: down when the bar sits in the upper half of the screen, up when it sits low.",
+    QB_STYLE = "Style", QB_STYLE_full = "Icon + text", QB_STYLE_text = "Text", QB_STYLE_icons = "Icons",
+    QB_STYLE_TIP = "Icons: small square buttons – the text shows in the tooltip. Click and right-click work the same.",
+    QB_ORDER = "Order", QB_ORDER_NEWEST = "Newest first", QB_ORDER_OLDEST = "Oldest first",
+    QB_ORDER_TIP = "Which line sits next to the bar's spot. Oldest first keeps lines in place while new ones arrive.",
+    QB_MAX = "Lines at most", QB_WIDTH = "Width",
+    QB_SHOW_TIMER = "Time line", QB_SHOW_TIMER_TIP = "Thin line at the bottom that runs empty until the line goes away.",
+    QB_SHOW_CLOSE = "Dismiss button", QB_SHOW_CLOSE_TIP = "The × on each line. Right-click dismisses as well.",
+    QB_SHOW_MORE = "\"+n more\" note", QB_SHOW_MORE_TIP = "The last line says how many more wait when not all fit.",
+    QB_LAYOUT_SAMPLE = "Sample line %d – click only prints",
+    QB_LAYOUT_REPORT = "Quick actions: opens %s, style %s, width %d px, spacing %d px, at most %d lines, %s.",
+    QB_LAYOUT_KINDS = "In the bar – guild questions: %s, whispers: %s, answers to post: %s.",
+}
+for k, v in pairs(enUS14b) do enUS[k] = v end
+
 local enUS15 = {
     LOCKED_TIP = "Read-only for you.",
     PAGE_ADMIN = "Guild admin", HEAD_ADMIN = "Guild-wide settings for the guild master, officers and the loot council",
@@ -1026,7 +1046,9 @@ local enUS16 = {
     BLESS_SINGLE_MISSING = "missing", BLESS_SINGLE_HAS = "on",
     BLESS_SINGLE_NOT_PALADIN = "Only paladins in the group have single blessings.",
     BLESS_SINGLE_ROW_TIP = "Left-click: cast it · Right-click: change · Mouse wheel: change",
-    BLESS_SINGLE_LINE = "Single: %s",
+    BLESS_SINGLE_LINE = "Single %s",
+    BLESS_WHISPER_TO = "Whisper to %s: %s",
+    BLESS_GUESTS_WHISPERED = "Whispered %d paladin(s) without the addon their blessings.",
     BLESS_SINGLES_EMPTY = "No single blessings. Smart assign adds them for players who want something else than their class gets; \"Single…\" adds one by hand.",
     BLESS_SINGLES_HINT = "A single blessing replaces that paladin's class blessing on the player. Click: change · Mouse wheel: change · Right-click: remove",
     BLESS_TIP_INSTEAD = "%s gets %s instead (single blessing)",
@@ -1055,9 +1077,9 @@ local enUS16 = {
     BLESS_OPT_SIDE = "Player buttons open to the", BLESS_SIDE_LEFT = "Left", BLESS_SIDE_RIGHT = "Right",
     BLESS_OPT_TIMES = "Buff duration", BLESS_OPT_TIMES_TIP = "Time left on class and player buttons and on \"Cast next\".",
     BLESS_OPT_COUNTS = "Buffed / total on class buttons", BLESS_OPT_SCALE = "Bar scale",
-    BLESS_SELF_SECTION = "Aura, seal and Righteous Fury",
-    BLESS_SELF_AURA = "Aura button", BLESS_SELF_AURA_PICK = "Aura", BLESS_SELF_SEAL = "Seal button", BLESS_SELF_SEAL_PICK = "Seal",
-    BLESS_SELF_FURY = "Righteous Fury button",
+    BLESS_SELF_SECTION = "State icons: aura, seal, Righteous Fury, Oath of Light",
+    BLESS_SELF_AURA = "Aura icon", BLESS_SELF_AURA_PICK = "Aura", BLESS_SELF_SEAL = "Seal icon", BLESS_SELF_SEAL_PICK = "Seal",
+    BLESS_SELF_FURY = "Righteous Fury icon",
     BLESS_SELF_TIP = "A button on top of the blessing bar: green while it is on you, red when it is missing; click casts it. Right-click on the bar button picks another one.",
     BLESS_SPELLS_LINE = "%s – normal: %s · greater: %s · ids learned from buffs: %s", BLESS_SPELLS_BYNAME = "by name (other id)",
     BLESS_SELF_ON = "Active on you", BLESS_SELF_OFF = "Not active", BLESS_SELF_ON_SHORT = "on", BLESS_SELF_OFF_SHORT = "off",
@@ -1077,6 +1099,13 @@ local enUS17 = {
     BLESS_NEW_CLASS = "New in the group – you bless %s. Mouse wheel on the bar changes it.",
     BLESS_NEW_NONE = "Nothing to fill in – every wish of these classes is given by another paladin already, or the option is off.",
     BLESS_AUTO_NEW = "Bless new classes automatically",
+    BLESS_COMPACT = "Compact view",
+    BLESS_TAKEN = "%s already gives %s to the %s class, and you may not change him.",
+    BLESS_TAKEN_NOTE = "from %s · swap",
+    BLESS_COMPACT_TIP = "Half as wide: class and blessing icons with counts. Times in the tooltip. Click again for the full bar.",
+    BLESS_WHISPER_GUESTS = "Whisper paladins without the addon",
+    BLESS_WHISPER_GUESTS_TIP = "Smart assign plans paladins without this addon too and whispers each one his blessings (after combat). Their blessings on players are read, so the page shows what they really give.",
+    BLESS_SELF_ICONS_TIP = "Shown as small icons in one row on the bar: green border while it is on, red while it is off. Switch all off and the row disappears.",
     BLESS_AUTO_NEW_TIP = "When someone of a class joins that you do not bless yet, you get a blessing for it right away: your main blessing if the class wants it, else what it wants most and no other paladin gives. Only your own assignments.",
     BLESS_SIDE_AUTO = "Auto",
     BLESS_OPT_SIDE_TIP = "Auto: toward the middle of the screen – to the right when the bar sits on the left side.",
@@ -1101,9 +1130,9 @@ local enUS18 = {
     BLESS_SELF_ON = "On", BLESS_SELF_OFF = "Off",
     BLESS_SELF_WHEEL_TIP = "Click: cast · Wheel: next",
     BLESS_SELF_FURY_TIP = "Click: cast",
-    BLESS_SELF_FURY = "Righteous Fury button",
-    BLESS_SELF_FURY_TIP_OPT = "A Righteous Fury button on top of the bar, for every spec – green while it is on you.",
-    BLESS_SELF_TIP = "A button on top of the bar: green while it is on you, click casts it, mouse wheel picks another one.",
+    BLESS_SELF_FURY = "Righteous Fury icon",
+    BLESS_SELF_FURY_TIP_OPT = "A Righteous Fury icon in the row on top of the bar, for every spec: green border while it is on you, red while it is off.",
+    BLESS_SELF_TIP = "An icon in the row on top of the bar: green border while it is on you, red while it is off. Click casts it, mouse wheel or right-click picks another one. No icon switched on: the row is gone.",
     BLESS_PLAYER_LIST_TIP = "Wheel: your single · Click: choose · Right: remove",
     BLESS_SINGLE_LINE_TIP = "Wheel: change · Click: choose · Right: remove",
     BLESS_CELL_TIP = "Click: choose · Wheel: change · Right: remove",
@@ -1117,11 +1146,23 @@ local enUS19 = {
     BLESS_PLAYERS_HINT = "Wheel: your single · Click: choose · Right: none. Hover a paladin's cell for his players.",
     BLESS_CELL_TIP = "Click: choose · Wheel: change · Shift + wheel: whole row · Right: remove · Players below: wheel = this paladin's single",
     BLESS_ROW_TIP = "Left: greater · Right: normal · Wheel: change · Shift + wheel: every class",
-    BLESS_SELF_OATH = "Oath of Light", BLESS_SELF_OATH_OPT = "Oath of Light button",
-    BLESS_SELF_OATH_OPT_TIP = "Shown when you know Oath of Light: casts it on the player you chose (tanks first), green while he has it. Mouse wheel or right-click picks the player.",
+    BLESS_SELF_OATH = "Oath of Light", BLESS_SELF_OATH_OPT = "Oath of Light icon",
+    BLESS_SELF_OATH_OPT_TIP = "Shown when you know Oath of Light: casts it on the player you chose (tanks first), green border while he has it. Mouse wheel or right-click picks the player.",
     BLESS_SELF_OATH_TIP = "Click: cast on him · Wheel / Right: choose the player",
     BLESS_OATH_YOUR_TARGET = "your target",
 }
 for k, v in pairs(enUS19) do enUS[k] = v end
+
+-- test suite page (Settings › Test suite)
+local enUSTests = {
+    PAGE_TESTS = "Test suite", HEAD_TESTS = "Try every feature alone – test data is never sent or saved. Switches show the tests that are running.",
+    TESTS_SEARCH = "Search tests …", TESTS_AREA_GENERAL = "General & diagnostics",
+    TESTS_RUN = "Run", TESTS_RUNNING = "running", TESTS_COUNT = "%d tests", TESTS_RUNNING_N = "%d running", TESTS_NONE_RUNNING = "No test running",
+    TESTS_STOP_ALL = "Stop all tests", TESTS_STOP_ALL_TIP = "Switches off every test that is still running.", TESTS_STOPPED = "%d test(s) stopped.",
+    TESTS_TIP_RUN = "Run: try it now.", TESTS_TIP_INPUT = "Needs input: Run puts the command into the chat box.",
+    TESTS_TIP_START = "Switch: start it – it stays on while the test runs.", TESTS_TIP_STOP = "Running – click to stop it.",
+    TESTS_CHAT = "Put into the chat box (to add options)",
+}
+for k, v in pairs(enUSTests) do enUS[k] = v end
 
 for k, v in pairs(enUS) do L[k] = v end

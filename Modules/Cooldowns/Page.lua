@@ -954,4 +954,10 @@ UI.AddPage("cooldowns", L.PAGE_COOLDOWNS, 50, function(content, page)
     end
 end, { section = "raid", icon = "timer", module = "cooldowns" })
 
-ns.On("LG_COOLDOWNS", function() ns.Debounce("cd-page", 0.3, function() ns.Window.Refresh("cooldowns") end) end)
+-- throttled (a debounce never ran while casts kept coming in a raid)
+local pageRefreshPending = false
+ns.On("LG_COOLDOWNS", function()
+    if pageRefreshPending then return end
+    pageRefreshPending = true
+    ns.After(0.3, function() pageRefreshPending = false; ns.Window.Refresh("cooldowns") end)
+end)

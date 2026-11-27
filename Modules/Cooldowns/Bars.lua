@@ -752,28 +752,41 @@ local function scanUnitFrames()
     end
 end
 -- cached; the expensive scan over all frames runs only after a roster change,
--- a loading screen, or when a cached frame no longer shows that player
-local function stillValid(e, unit)
+-- a loading screen, or when a cached frame no longer shows that player.
+-- Frames are matched by GUID (unit tokens shift when the roster changes).
+local function stillValid(e, guid)
     local f = e.frame
     if not f:IsVisible() then return false end
     local u = (f.GetAttribute and f:GetAttribute("unit")) or f.unit
-    return type(u) == "string" and (ns.Call(UnitIsUnit, u, unit) and true or false)
+    return type(u) == "string" and ns.Call(UnitGUID, u) == guid
 end
-function Bars.UnitFrame(unit)
-    if not unit then return nil end
+local frameRetries, frameRetryPending = 0, false
+local FRAME_RESCAN, FRAME_RETRIES = 10, 3
+function Bars.UnitFrame(unit, guid)
+    guid = guid or (unit and ns.Call(UnitGUID, unit))
+    if not guid then return nil end
     if frameCacheTime == 0 then scanUnitFrames() end
-    local guid = ns.Call(UnitGUID, unit)
-    local e = guid and frameCache[guid]
-    if e and stillValid(e, unit) then return e.frame end
+    local e = frameCache[guid]
+    if e and stillValid(e, guid) then return e.frame end
     -- missing or moved: rescan, but at most every 10 s
-    if GetTime() - frameCacheTime > 10 then
+    if GetTime() - frameCacheTime > FRAME_RESCAN then
         scanUnitFrames()
-        e = guid and frameCache[guid]
-        if e and stillValid(e, unit) then return e.frame end
+        e = frameCache[guid]
+        if e and stillValid(e, guid) then return e.frame end
+    end
+    -- unit frames are often built a moment after a roster change or loading
+    -- screen: look again once the rescan is allowed (a few times, then stop)
+    if not frameRetryPending and frameRetries < FRAME_RETRIES then
+        frameRetries = frameRetries + 1
+        frameRetryPending = true
+        ns.After(math.max(0.5, frameCacheTime + FRAME_RESCAN + 0.1 - GetTime()), function()
+            frameRetryPending = false
+            Bars.RequestLayout(0)
+        end)
     end
     return nil
 end
-function Bars.RescanFrames() frameCacheTime = 0 end
+function Bars.RescanFrames() frameCacheTime = 0; frameRetries = 0 end
 -- which frame was found for each group member (for the settings check)
 function Bars.FoundFrames()
     scanUnitFrames()
@@ -859,7 +872,7 @@ local function attachEntries(f, style, columns)
     table.sort(keys)
     for _, c in ipairs(keys) do
         for _, e in ipairs(columns[c]) do
-            local uf = Bars.UnitFrame(e.member.unit)
+            local uf = e.member.unit and Bars.UnitFrame(e.member.unit, e.member.guid)
             if uf then
                 local k = e.member.key
                 perMember[k] = perMember[k] or { frame = uf, list = {} }
@@ -1033,7 +1046,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
             end
         end
     end
-    if relayout then ns.Debounce("cd-layout", 0.2, Bars.Layout) end
+    if relayout then Bars.RequestLayout(0.2) end
 end)
 
 function Bars.ResetPosition(key)
@@ -1042,14 +1055,30 @@ function Bars.ResetPosition(key)
     Bars.Layout()
 end
 
-ns.On("LG_COOLDOWNS", function() ns.Debounce("cd-layout", 0.15, Bars.Layout) end)
-ns.On("LG_THEME", function() ns.Debounce("cd-layout", 0.15, Bars.Layout) end)
+-- Throttled, not debounced: casts, roster and combat events can come in
+-- faster than any debounce delay in a raid, which used to hold the layout back
+-- until things calmed down (bars appeared late or all at once). A request
+-- runs at most `delay` seconds later; an earlier pending run covers it.
+local layoutTimer, layoutAt = nil, nil
+function Bars.RequestLayout(delay)
+    local at = GetTime() + (delay or 0.15)
+    if layoutTimer and layoutAt <= at then return end
+    if layoutTimer then layoutTimer:Cancel() end
+    layoutAt = at
+    layoutTimer = C_Timer.NewTimer(math.max(0, at - GetTime()), function()
+        layoutTimer, layoutAt = nil, nil
+        ns.Safe(Bars.Layout)
+    end)
+end
+
+ns.On("LG_COOLDOWNS", function() Bars.RequestLayout(0.25) end)
+ns.On("LG_THEME", function() Bars.RequestLayout(0.15) end)
 ns.On("LG_READY", function() ns.After(4, Bars.Layout) end)
-ns.On("PLAYER_ENTERING_WORLD", function() ns.Debounce("cd-layout", 1, Bars.Layout) end)
 -- conditions depend on combat and group changes
-ns.On("PLAYER_REGEN_DISABLED", function() ns.Debounce("cd-layout", 0.05, Bars.Layout) end)
-ns.On("PLAYER_REGEN_ENABLED", function() ns.Debounce("cd-layout", 0.3, Bars.Layout) end)
-ns.On("GROUP_ROSTER_UPDATE", function() Bars.RescanFrames(); ns.Debounce("cd-layout", 0.5, Bars.Layout) end)
+ns.On("PLAYER_REGEN_DISABLED", function() Bars.RequestLayout(0.05) end)
+ns.On("PLAYER_REGEN_ENABLED", function() Bars.RequestLayout(0.3) end)
+-- the roster itself is rebuilt by the tracker, which then fires LG_COOLDOWNS
+ns.On("GROUP_ROSTER_UPDATE", function() Bars.RescanFrames(); Bars.RequestLayout(1) end)
 -- unit frames are rebuilt after loading screens and roster changes
-ns.On("PLAYER_ENTERING_WORLD", function() Bars.RescanFrames() end)
-ns.On("ZONE_CHANGED_NEW_AREA", function() ns.Debounce("cd-layout", 1, Bars.Layout) end)
+ns.On("PLAYER_ENTERING_WORLD", function() Bars.RescanFrames(); Bars.RequestLayout(1) end)
+ns.On("ZONE_CHANGED_NEW_AREA", function() Bars.RequestLayout(1) end)

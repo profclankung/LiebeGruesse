@@ -163,8 +163,10 @@ function Spells.Icon(spell)
 end
 
 -- Builds the localized name index (other ranks share the name)
+local resolved = {}   -- [any spell id] = tracked id or false (every cast in a raid asks: one lookup per id)
 function Spells.Index()
     wipe(Spells.byName)
+    wipe(resolved)
     for _, spell in ipairs(Spells.list) do
         local name = Spells.Name(spell)
         if name and not Spells.byName[name] then Spells.byName[name] = spell.id end
@@ -176,9 +178,13 @@ end
 function Spells.Resolve(id)
     if type(id) ~= "number" or ns.IsSecret(id) then return nil end
     if Spells.byId[id] then return id end
+    local r = resolved[id]
+    if r ~= nil then return r or nil end
     local name
     if C_Spell and C_Spell.GetSpellName then name = ns.Call(C_Spell.GetSpellName, id) end
     if not name and GetSpellInfo then name = ns.Call(GetSpellInfo, id) end
+    -- no name yet (spell data not loaded): ask again next time
+    if name then resolved[id] = Spells.byName[name] or false end
     return name and Spells.byName[name]
 end
 
