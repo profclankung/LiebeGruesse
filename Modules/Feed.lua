@@ -427,7 +427,8 @@ local function lootEntry(key, s, now)
     local zone, ins = here()
     local info = Items.Info(s)
     return { id = ("loot:%s:%d:%d"):format(key, Items.ID(s) or 0, math.floor(now / 60)), t = now, k = "loot", a = key,
-        d = { i = s, n = info and info.name, q = info and info.quality, m = lootSource(), z = zone, ins = ins } }
+        d = { i = s, n = info and info.name, q = info and info.quality, m = lootSource(), z = zone, ins = ins,
+              r = ns.RaidInstance() and 2 or nil } }
 end
 
 local function epic(link)
@@ -478,8 +479,8 @@ ns.On("ENCOUNTER_END", function(_, encounterID, name, _, groupSize, success)
     fightStart = nil
     local zone, ins = here()
     local list = guildiesInGroup()
-    local _, kind = ns.Call(GetInstanceInfo)
-    local raid = kind == "raid" or (tonumber(groupSize) or 0) > 5 or nil
+    -- 2 = a real raid instance (1.0.90; older entries: true, ten-player dungeons included)
+    local raid = ns.RaidInstance() and 2 or nil
     ns.After(3, function()
         Feed.Add({ id = ("boss:%s:%s:%s"):format(tostring(encounterID), today(now), leader or "?"), t = now, k = "boss",
             a = leader or Names.Me(), d = { b = name, n = guildies, s = groupSize, dur = dur, z = zone, ins = ins, g = list, r = raid } },

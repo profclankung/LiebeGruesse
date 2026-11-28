@@ -452,13 +452,15 @@ function Profile.Capture()
         at = ns.Attune and ns.Attune.ReadOwn() or nil,
         rf = raceFile, ri = type(raceId) == "number" and raceId or nil, sx = ns.Call(UnitSex, "player"), tn = readTrees(), st = readStats(),
         tk = layout, tp2 = Profile.ReadSecondSpec(),
+        -- own achievements (speedruns, quests …) as tiers, e.g. "dv2,sp1"
+        ac = ns.Achievements and ns.Achievements.Pack() or nil,
     }
 end
 
 -- Stable signature for change detection (ignores timestamps)
 local function signature(p)
     local parts = {}
-    for _, v in ipairs({ p.name, p.c, p.l, p.il, p.sp, p.tp, p.m, p.v, p.a, p.at, p.rf, p.ri, p.sx, p.tn, p.tk, p.tp2 }) do parts[#parts + 1] = tostring(v) end
+    for _, v in ipairs({ p.name, p.c, p.l, p.il, p.sp, p.tp, p.m, p.v, p.a, p.at, p.rf, p.ri, p.sx, p.tn, p.tk, p.tp2, p.ac }) do parts[#parts + 1] = tostring(v) end
     for _, slot in ipairs(Items.SLOTS) do parts[#parts + 1] = p.g[slot.id] or "" end
     -- shirt and tabard change the look in the armory model
     for _, slot in ipairs(Items.COSMETIC) do parts[#parts + 1] = p.g[slot.id] or "" end
@@ -504,7 +506,7 @@ function Profile.Broadcast()
     Comm.Send("P", { d = Profile.Export(m), o = me }, "GUILD", { priority = "bulk" })
 end
 
-local EXPORT = { "name", "c", "l", "r", "il", "sp", "tp", "pr", "g", "m", "v", "t", "a", "at", "rf", "ri", "sx", "tn", "st", "stt", "tk", "tp2" }
+local EXPORT = { "name", "c", "l", "r", "il", "sp", "tp", "pr", "g", "m", "v", "t", "a", "at", "rf", "ri", "sx", "tn", "st", "stt", "tk", "tp2", "ac" }
 function Profile.Export(m)
     local out = {}
     for _, field in ipairs(EXPORT) do out[field] = m[field] end

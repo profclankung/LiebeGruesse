@@ -25,6 +25,12 @@ function ns.Sound(name, volume)
     pcall(PlaySoundFile, ns.media .. "Sounds\\" .. name .. "_" .. best .. ".ogg", "Master")
 end
 ns.title = "Liebe Grüße"
+-- CurseForge page (not public): install once from the website, then the CurseForge app updates it
+ns.DOWNLOAD_URL = "https://www.curseforge.com/wow/addons/lgguild"
+-- copy box with the link (the game cannot open web pages or the clipboard)
+function ns.ShowDownloadLink()
+    if ns.Share and ns.Share.ShowText then ns.Share.ShowText(ns.L.DL_TITLE, ns.L.DL_HINT, ns.DOWNLOAD_URL) end
+end
 
 ---------------------------------------------------------------------------
 -- Secret values / safe calls
@@ -71,7 +77,10 @@ function ns.Num(v)
     return type(v) == "number" and not ns.IsSecret(v)
 end
 
+-- errors of our own wrappers also go to the bug reporter (Modules/Bugs), even
+-- when another addon owns the global error handler
 local function report(err)
+    if ns.OnOwnError then pcall(ns.OnOwnError, err, debugstack and debugstack(3) or nil) end
     local handler = geterrorhandler and geterrorhandler()
     if handler then handler(err) else print(err) end
 end
@@ -146,6 +155,20 @@ end
 function ns.CancelDebounce(key)
     local old = debounced[key]
     if old then old:Cancel(); debounced[key] = nil end
+end
+
+---------------------------------------------------------------------------
+-- A real raid instance. Ten-player dungeons run as a raid group (e.g. Upper
+-- Blackrock Spire) do not count: known dungeons and raids for 10 or fewer.
+---------------------------------------------------------------------------
+function ns.RaidInstance()
+    local inside, kind = ns.Call(IsInInstance)
+    if inside ~= true or kind ~= "raid" then return false end
+    local _, _, _, _, maxPlayers, _, _, inst = ns.Call(GetInstanceInfo)
+    local wings = ns.RunsData and ns.Num(inst) and ns.RunsData.BY_INST[inst]
+    if wings and wings[1] then return wings[1].kind == "raid" end
+    if ns.Num(maxPlayers) and maxPlayers > 0 and maxPlayers <= 10 then return false end
+    return true
 end
 
 ---------------------------------------------------------------------------

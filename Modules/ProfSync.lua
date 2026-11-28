@@ -201,6 +201,7 @@ local function create()
     _G.LiebeGruesseProfSync = frame
     tinsert(UISpecialFrames, "LiebeGruesseProfSync")
     PS.frame = frame
+    UI.CloseX(frame)
 
     frame.glow = UI.VGradient(frame, { 0.090, 0.129, 0.192, 0.9 }, { 0.090, 0.129, 0.192, 0 }, "BORDER")
     frame.glow:SetPoint("TOPLEFT", 1, -1); frame.glow:SetPoint("TOPRIGHT", -1, -1); frame.glow:SetHeight(90)

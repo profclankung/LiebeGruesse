@@ -163,3 +163,52 @@ function Test.Security()
     ns.Print("  " .. ns.CoGuild.BundStatus())
     return cases
 end
+
+---------------------------------------------------------------------------
+-- 1.0.90: speedruns, raid night awards, version reminder
+---------------------------------------------------------------------------
+-- a version number one step ahead of ours (for the update reminder test)
+function Test.NextVersion()
+    local p = {}
+    for n in tostring(ns.version or "1.0.0"):gmatch("%d+") do p[#p + 1] = tonumber(n) end
+    return ("%d.%d.%d"):format(p[1] or 1, p[2] or 0, (p[3] or 0) + 1)
+end
+
+-- the share texts of a sample record (copy box + chat line printed, nothing sent)
+function Test.SampleRun()
+    local me = ns.Names.Me()
+    local _, class = ns.Call(UnitClass, "player")
+    return { id = "test:run", w = "stratlive", i = 329, k = "party", t = ns.Now(), raw = 1902, d = 1, by = me, v = ns.version,
+        s = { { e = 1, b = "Magistrate Barthilas", s = 252 }, { e = 2, b = "Ramstein the Gorger", s = 890 },
+              { e = 3, b = "Fras Siabi", s = 1083 }, { e = 4, b = "Balnazzar", s = 1902 } },
+        g = { { k = me, c = class, r = "T" }, { k = "mar cha", c = "PRIEST", r = "H" }, { k = "salty brown", c = "MAGE", r = "D" } } }
+end
+function Test.RunShare()
+    local rec = Test.SampleRun()
+    ns.Print(ns.L.TEST_TAG .. " " .. ns.Runs.ChatLine(rec))
+    ns.Runs.ShowDiscord(rec)
+end
+
+-- tonight's awards with made-up winners (only on this client, 2 minutes)
+function Test.Awards()
+    local C, R = ns.Community, ns.CommunityRaid
+    local keys = {}
+    for _, key in ipairs(ns.Guild.order or {}) do keys[#keys + 1] = key; if #keys >= 6 then break end end
+    if #keys == 0 then keys = { ns.Names.Me() } end
+    local function pick(i) return keys[(i - 1) % #keys + 1] end
+    local day = R.Day()
+    local now = ns.Now()
+    C.testEvents = {
+        { id = "test:a1", t = now, k = "first2die", who = pick(1), d = { day = day } },
+        { id = "test:a2", t = now, k = "first2die", who = pick(1), d = { day = day } },
+        { id = "test:a3", t = now, k = "laststand", who = pick(2), d = { day = day } },
+        { id = "test:a4", t = now, k = "jump", who = pick(3), d = { n = 212, day = day } },
+        { id = "test:a5", t = now, k = "rnight", who = pick(4), d = { day = day, chat = 148, rolls = 6, rsum = 426, nr = 1 } },
+        { id = "test:a6", t = now, k = "rnight", who = pick(5), d = { day = day, chat = 12, nr = 4 } },
+        { id = "test:a7", t = now, k = "chug", who = pick(6), d = { n = 11, day = day } },
+    }
+    R.ShowAwardsToast(day, true)
+    ns.Window.Show("community")
+    ns.Window.Refresh("community")
+    C_Timer.After(120, function() C.testEvents = nil; ns.Window.Refresh("community") end)
+end

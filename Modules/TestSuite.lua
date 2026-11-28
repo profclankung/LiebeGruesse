@@ -222,3 +222,68 @@ UI.AddPage("tests", L.PAGE_TESTS, 97.5, function(content, page)
     refreshTop()
     page.OnShow = function() form:Refresh(); refreshTop() end
 end, { section = "settings", icon = "badge-check" })
+
+---------------------------------------------------------------------------
+-- Small popup while a test keeps running: which tests, "Stop tests" (no
+-- /reload needed). The cross hides it until every test has ended. It looks
+-- once a second only while a test runs (nothing at all otherwise).
+---------------------------------------------------------------------------
+local Popup = {}
+ns.TestPopup = Popup
+local frame, ticker
+
+function Popup.Running()
+    local list = {}
+    for _, g in ipairs(ns.Commands or {}) do
+        if g.key == "test" then
+            for _, c in ipairs(g.commands) do if Suite.IsActive(c) then list[#list + 1] = c end end
+        end
+    end
+    return list
+end
+
+local function create()
+    frame = UI.Panel(UIParent, "bg", "accent")
+    UI.Float(frame, "DIALOG")
+    frame:SetSize(300, 64)
+    frame:SetClampedToScreen(true)
+    frame:EnableMouse(true)
+    frame.stripe = UI.Fill(frame, "accent", "ARTWORK")
+    frame.stripe:SetPoint("TOPLEFT"); frame.stripe:SetPoint("BOTTOMLEFT"); frame.stripe:SetWidth(3)
+    frame.icon = UI.Icon(frame, "zap", 14, "accent"); frame.icon:SetPoint("TOPLEFT", 12, -10)
+    frame.kicker = UI.Text(frame, 11, "accent", nil, nil, true); frame.kicker:SetPoint("LEFT", frame.icon, "RIGHT", 8, 0)
+    frame.names = UI.Text(frame, 12, "text"); frame.names:SetPoint("TOPLEFT", 12, -30)
+    frame.names:SetWidth(170); frame.names:SetWordWrap(false)
+    frame.stop = UI.Button(frame, L.TESTPOP_STOP, 104, 24, function()
+        local n = Suite.StopAll()
+        ns.Print(L.TESTS_STOPPED:format(n))
+        Popup.Check()
+    end, "x")
+    frame.stop:SetPoint("BOTTOMRIGHT", -10, 10)
+    frame.stop.tip = { L.TESTPOP_STOP_TIP }
+    UI.CloseX(frame, function() Popup.dismissed = true; frame:Hide() end, 16, -6, -6)
+    frame.closeX.tip = L.TESTPOP_HIDE
+    ns.Movers.Attach("testPopup", frame)
+end
+
+function Popup.Check()
+    local list = Popup.Running()
+    if #list == 0 then
+        Popup.dismissed = nil
+        if frame then frame:Hide() end
+        if ticker then ticker:Cancel(); ticker = nil end
+        return
+    end
+    if not ticker then ticker = C_Timer.NewTicker(1, function() ns.Safe(Popup.Check) end) end
+    if Popup.dismissed then if frame then frame:Hide() end return end
+    if not frame then create() end
+    local names = {}
+    for _, c in ipairs(list) do names[#names + 1] = (c.cmd:gsub("^test%s*", "")) end
+    frame.kicker:SetText(ns.Upper(#list == 1 and L.TESTPOP_ONE or L.TESTPOP_N:format(#list)))
+    frame.names:SetText("/lg test " .. table.concat(names, ", "))
+    frame:Show()
+end
+
+ns.On("LG_READY", function()
+    ns.Movers.Anchor("testPopup", L.TESTPOP_MOVER, { "TOP", "TOP", 0, -64 }, 300, 64, nil, { icon = "zap" })
+end)

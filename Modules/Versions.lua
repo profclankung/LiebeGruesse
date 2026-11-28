@@ -128,8 +128,8 @@ function Versions.Notify(force)
     ns.Print(tag .. L.UPDATE_CHAT:format(info.v, ns.version))
     UI.Toast(L.UPDATE_KICKER, L.UPDATE_TEXT:format(info.v, ns.version), ns.media .. "icon", {
         kicker = tag .. L.UPDATE_KICKER, big = true, duration = 15,
-        lines = { Versions.UsedBy(info) },
-        action = function() ns.Window.Show("versions") end, actionText = L.UPDATE_CLICK,
+        lines = { Versions.UsedBy(info), L.UPDATE_HOW },
+        action = function() ns.Window.Show("versions") end, actionText = L.UPDATE_CLICK, page = "versions",
     })
 end
 
@@ -202,6 +202,109 @@ end
 function Versions.CheckGuild()
     Comm.Send("VQ", { v = ns.version }, "GUILD", { priority = "normal" })
 end
+
+---------------------------------------------------------------------------
+-- Officers remind members with an older version (VN). One guild message for
+-- everybody (each client checks itself whether it is behind) or a whisper to
+-- one player. Sender: cooldown (30 min, setting) and one reminder per player
+-- and day; receiver: only from officers, only a plausible newer version, at
+-- most once a day.
+---------------------------------------------------------------------------
+function Versions.NudgeSettings()
+    local s = ns.Database.Settings()
+    s.versionNudge = s.versionNudge or {}
+    local o = s.versionNudge
+    if o.cooldown == nil then o.cooldown = 30 end
+    if o.accept == nil then o.accept = true end
+    o.nudged = o.nudged or {}
+    return o
+end
+
+function Versions.CanNudge() return IsInGuild() and ns.Guild.IsOfficer(Names.Me()) == true end
+
+-- players (rows) on an older version than the newest, and how many of them are online
+function Versions.Outdated(newest)
+    newest = newest or Versions.Newest()
+    local rows, online = {}, 0
+    for _, r in ipairs(Versions.PlayerRows(newest)) do
+        if r.v and ns.CompareVersions(r.v, newest) < 0 then
+            rows[#rows + 1] = r
+            if r.online then online = online + 1 end
+        end
+    end
+    return rows, online
+end
+
+-- seconds until the guild-wide reminder may go out again (0 = now)
+function Versions.NudgeWait()
+    local o = Versions.NudgeSettings()
+    return math.max(0, (o.at or 0) + o.cooldown * 60 - ns.Now())
+end
+
+function Versions.NudgeAll()
+    if not Versions.CanNudge() then ns.Print(L.NUDGE_ONLY_OFFICERS); return false end
+    local wait = Versions.NudgeWait()
+    if wait > 0 then ns.Print(L.NUDGE_WAIT:format(math.ceil(wait / 60))); return false end
+    local newest = Versions.Newest()
+    local rows, online = Versions.Outdated(newest)
+    if online == 0 then ns.Print(L.NUDGE_NOBODY); return false end
+    local o = Versions.NudgeSettings()
+    o.at = ns.Now()
+    for _, r in ipairs(rows) do if r.online then o.nudged[r.key] = ns.Now() end end
+    Comm.Send("VN", { v = newest, t = ns.Now() }, "GUILD", { priority = "normal" })
+    ns.Print(L.NUDGE_SENT:format(online, newest))
+    ns.Window.Refresh("versions")
+    return true
+end
+
+-- reminded today already?
+function Versions.Nudged(key)
+    local t = Versions.NudgeSettings().nudged[key]
+    return t and date("%Y%m%d", t) == date("%Y%m%d", ns.Now())
+end
+
+function Versions.NudgeOne(r)
+    if not Versions.CanNudge() then ns.Print(L.NUDGE_ONLY_OFFICERS); return false end
+    if Versions.Nudged(r.key) then ns.Print(L.NUDGE_TODAY:format(r.name or Names.Display(r.key))); return false end
+    local newest = Versions.Newest()
+    local sent = false
+    for _, c in ipairs(r.chars or {}) do
+        if c.online and c.v and ns.CompareVersions(c.v, newest) < 0 then
+            Comm.Send("VN", { v = newest, t = ns.Now() }, "WHISPER", { target = c.name, priority = "normal" })
+            sent = true
+        end
+    end
+    if not sent then ns.Print(L.NUDGE_OFFLINE:format(r.name or Names.Display(r.key))); return false end
+    Versions.NudgeSettings().nudged[r.key] = ns.Now()
+    ns.Print(L.NUDGE_SENT_ONE:format(r.name or Names.Display(r.key)))
+    ns.Window.Refresh("versions")
+    return true
+end
+
+function Versions.ShowNudge(v, from, test)
+    local g = ns.Guild.Find(from)
+    local who = ns.ColorName(g and g.name or Names.Display(from), g and g.class)
+    local kicker = (test and (L.TEST_TAG .. " ") or "") .. L.UPDATE_KICKER
+    UI.Toast(kicker, L.NUDGE_TEXT:format(v), ns.media .. "icon", {
+        kicker = kicker, big = true, duration = 15,
+        lines = { L.NUDGE_LINE:format(ns.version, who), L.UPDATE_HOW },
+        action = function() ns.Window.Show("versions") end, actionText = L.UPDATE_CLICK, page = "versions",
+    })
+    ns.Print(L.NUDGE_CHAT:format(who, v, ns.version))
+end
+
+Comm.Register("VN", function(data, sender, channel)
+    if channel ~= "GUILD" and channel ~= "WHISPER" then return end
+    if not ns.Guild.IsMember(sender) or not ns.Guild.IsOfficer(sender) then return end
+    local v = type(data.v) == "string" and data.v or nil
+    if not v or #v > 12 or ns.CompareVersions(v, ns.version) <= 0 or not Versions.Plausible(v) then return end
+    local o = Versions.NudgeSettings()
+    if not o.accept or (ns.Notify and ns.Notify.Settings().update == false) then return end
+    local today = date("%Y%m%d", ns.Now())
+    if o.seenDay == today then return end
+    o.seenDay = today
+    Versions.ShowNudge(v, sender)
+end)
 
 ---------------------------------------------------------------------------
 -- Players: one row per person – alts are grouped under their main
@@ -296,9 +399,28 @@ UI.AddPage("versions", L.PAGE_VERSIONS, 30, function(content, page)
         s:SetText(L["UPDATE_STEP" .. i])
         card.steps[i] = { d = d, n = n, s = s }
     end
+    card.dl = UI.Button(card, L.DL_BUTTON, 190, 24, function() ns.ShowDownloadLink() end, "copy")
+    card.dl.tip = { L.DL_BUTTON_TIP }
     card.mute = UI.Button(card, "", 190, 24, function() Versions.Mute() end)
     card.mute.tip = { L.UPDATE_MUTE_TIP }
     card:Hide()
+
+    -- officers: remind members with an older version
+    local nudge = UI.Panel(content, "panel", "borderDim")
+    nudge:SetPoint("TOPRIGHT", -ns.Window.SearchReserve(), 0)
+    nudge:SetHeight(72)
+    nudge.stripe = UI.Fill(nudge, "warn", "ARTWORK")
+    nudge.stripe:SetPoint("TOPLEFT"); nudge.stripe:SetPoint("BOTTOMLEFT"); nudge.stripe:SetWidth(3)
+    nudge.badge = UI.Panel(nudge, "input", "warn"); nudge.badge:SetSize(42, 42); nudge.badge:SetPoint("LEFT", 16, 0)
+    nudge.icon = UI.Icon(nudge.badge, "circle-arrow-up", 22, "warn"); nudge.icon:SetPoint("CENTER")
+    nudge.kicker = UI.Text(nudge, 11, "warn", nil, nil, true); nudge.kicker:SetPoint("TOPLEFT", 70, -12)
+    nudge.kicker:SetText(ns.Upper(L.NUDGE_KICKER))
+    nudge.title = UI.Text(nudge, 17, "text", nil, nil, true); nudge.title:SetPoint("TOPLEFT", 70, -26); nudge.title:SetWordWrap(false)
+    nudge.text = UI.Text(nudge, 11, "muted"); nudge.text:SetPoint("TOPLEFT", 70, -48); nudge.text:SetWordWrap(false)
+    nudge.btn = UI.Button(nudge, "", 200, 26, function() Versions.NudgeAll() end, "megaphone")
+    nudge.btn:SetPoint("TOPRIGHT", -14, -14)
+    nudge.hint = UI.Text(nudge, 10, "muted", "RIGHT"); nudge.hint:SetPoint("TOPRIGHT", -14, -46); nudge.hint:SetWordWrap(false)
+    nudge:Hide()
 
     local guildBtn = UI.Button(content, L.CHECK_GUILD, 150, 22, function() mode = "guild"; Versions.CheckGuild(); page.OnShow() end)
     guildBtn:SetPoint("TOPLEFT")
@@ -342,6 +464,19 @@ UI.AddPage("versions", L.PAGE_VERSIONS, 30, function(content, page)
               sort = function(r) return r.v and (r.v:gsub("(%d+)", function(n) return ("%05d"):format(tonumber(n)) end)) or "" end },
             { key = "t", title = L.COL_LAST_SEEN, width = 120, text = function(r) return Theme.HexColor("muted", r.t and ns.Ago(r.t) or "–") end,
               sort = function(r) return -(r.t or 0) end },
+            { key = "remind", title = "", width = 34, align = "CENTER", noHighlight = true,
+              text = function(r)
+                  if not Versions.CanNudge() or not r.v or ns.CompareVersions(r.v, r.newest) >= 0 then return "" end
+                  local ready = r.online and not Versions.Nudged(r.key)
+                  return UI.Glyph("bell", ready and "accent" or "muted", 12)
+              end,
+              onClick = function(r) if Versions.CanNudge() and r.v and ns.CompareVersions(r.v, r.newest) < 0 then Versions.NudgeOne(r) end end,
+              tip = function(r)
+                  if not Versions.CanNudge() or not r.v or ns.CompareVersions(r.v, r.newest) >= 0 then return end
+                  if Versions.Nudged(r.key) then return L.NUDGE_REMIND, { L.NUDGE_REMIND_DONE } end
+                  if not r.online then return L.NUDGE_REMIND, { L.NUDGE_REMIND_OFFLINE } end
+                  return L.NUDGE_REMIND, { L.NUDGE_REMIND_TIP:format(r.v, r.newest) }
+              end },
             { key = "online", title = L.COL_STATUS, width = 170,
               text = function(r)
                   if not r.online then return Theme.HexColor("muted", L.OFFLINE) end
@@ -360,11 +495,40 @@ UI.AddPage("versions", L.PAGE_VERSIONS, 30, function(content, page)
     list:SetPoint("TOPLEFT", guildBtn, "BOTTOMLEFT", 0, -10)
     list:SetPoint("BOTTOMRIGHT")
 
+    -- the officers' reminder card sits below the update card (or at the top)
+    local function layoutNudge(anchor)
+        local newest = Versions.Newest()
+        local rows, online = Versions.Outdated(newest)
+        local show = Versions.CanNudge() and #rows > 0
+        nudge:SetShown(show)
+        guildBtn:ClearAllPoints()
+        if not show then
+            if anchor then guildBtn:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12) else guildBtn:SetPoint("TOPLEFT") end
+            return
+        end
+        nudge:ClearAllPoints()
+        if anchor then
+            nudge:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -12); nudge:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -12)
+        else
+            nudge:SetPoint("TOPLEFT"); nudge:SetPoint("TOPRIGHT", -ns.Window.SearchReserve(), 0)
+        end
+        local W = math.max(300, (content:GetWidth() or 800) - (anchor and 8 or ns.Window.SearchReserve()))
+        nudge.title:SetText(L.NUDGE_TITLE:format(#rows, newest))
+        nudge.title:SetWidth(math.max(80, W - 70 - 230))
+        nudge.text:SetText(L.NUDGE_HINT:format(online)); nudge.text:SetWidth(math.max(80, W - 70 - 230))
+        local wait = Versions.NudgeWait()
+        nudge.btn:SetText(L.NUDGE_BUTTON:format(online))
+        nudge.btn:SetEnabled(wait == 0 and online > 0)
+        nudge.btn.tip = { wait > 0 and L.NUDGE_WAIT:format(math.ceil(wait / 60)) or (online == 0 and L.NUDGE_NOBODY or L.NUDGE_BUTTON_TIP) }
+        nudge.hint:SetText(wait > 0 and L.NUDGE_WAIT:format(math.ceil(wait / 60)) or L.NUDGE_RULES:format(Versions.NudgeSettings().cooldown))
+        guildBtn:SetPoint("TOPLEFT", nudge, "BOTTOMLEFT", 0, -12)
+    end
+
     local function layoutCard()
         local info = Versions.Available()
         card:SetShown(info ~= nil)
         guildBtn:ClearAllPoints()
-        if not info then guildBtn:SetPoint("TOPLEFT"); return end
+        if not info then layoutNudge(nil); return end
         local W = math.max(300, (content:GetWidth() or 800) - 8)
         local narrow = W < 640
         local tx = 19 + 52 + 16
@@ -399,14 +563,17 @@ UI.AddPage("versions", L.PAGE_VERSIONS, 30, function(content, page)
         card.mute:SetEnabled(not muted)
         if muted then card.mute.tip = { L.UPDATE_MUTED_TIP } else card.mute.tip = { L.UPDATE_MUTE_TIP } end
         card.mute:ClearAllPoints()
+        card.dl:ClearAllPoints()
         if narrow then
+            card.dl:SetPoint("TOPLEFT", card, "TOPLEFT", tx, -(y + 4)); y = y + 30
             card.mute:SetPoint("TOPLEFT", card, "TOPLEFT", tx, -(y + 4)); y = y + 34
         else
-            card.mute:SetPoint("TOPRIGHT", card, "TOPRIGHT", -16, -16)
+            card.dl:SetPoint("TOPRIGHT", card, "TOPRIGHT", -16, -16)
+            card.mute:SetPoint("TOPRIGHT", card.dl, "BOTTOMRIGHT", 0, -6)
         end
         local h = math.max(y + 12, 16 + 52 + 16)
         card:SetHeight(h)
-        guildBtn:SetPoint("TOPLEFT", card, "BOTTOMLEFT", 0, -12)
+        layoutNudge(card)
     end
     content:HookScript("OnSizeChanged", function() if page.frame and page.frame:IsShown() then ns.Debounce("versions-card", 0.05, layoutCard) end end)
 

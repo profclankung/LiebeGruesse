@@ -212,6 +212,19 @@ end
 -- the mark lasts about 5 s in all (pulses, hold, fade)
 UI.FLASH_TIME = 5
 UI.FLASH_HOLD = 2.9
+-- The cross at the top right of a window (every window of the addon can be closed).
+-- onClose decides what closing means (default: hide the frame).
+function UI.CloseX(frame, onClose, size, x, y)
+    local b = UI.IconButton(frame, "x", size or 18, function()
+        if onClose then ns.Safe(onClose) else frame:Hide() end
+    end)
+    b:SetPoint("TOPRIGHT", x or -8, y or -8)
+    b.tip = ns.L.CLOSE
+    b:SetFrameLevel((frame:GetFrameLevel() or 1) + 10)
+    frame.closeX = b
+    return b
+end
+
 function UI.Flash(f, restart)
     if not f then return end
     if f.flashAnim and f.flashAnim:IsPlaying() and not restart then return end

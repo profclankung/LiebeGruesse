@@ -53,6 +53,7 @@ function Notify.Feed(e, test)
             local msg = ns.Messages.Format("gratzLevel", { player = display(e.a), level = d.l or 0 })
             opts.actionText = L.NOTIFY_CLICK_GRATZ
             opts.action = function() congratulate(msg) end
+            opts.react = { m = msg, c = "GUILD", b = L.NLOG_GRATZ }
         end
     elseif e.k == "loot" then
         local info = Items.Info(d.i)
@@ -66,12 +67,14 @@ function Notify.Feed(e, test)
         if s.sound then opts.sound = SOUND_EPIC end
         if s.gratz then
             opts.actionText = L.NOTIFY_CLICK_WHISPER_GRATZ
-            opts.action = function() ns.SendChat(ns.Messages.Format("gratzLoot", { player = display(e.a), item = Items.Link(d.i) or "?" }), "WHISPER", whisperTarget(e.a)) end
+            local msg = ns.Messages.Format("gratzLoot", { player = display(e.a), item = Items.Link(d.i) or "?" })
+            opts.action = function() ns.SendChat(msg, "WHISPER", whisperTarget(e.a)) end
+            opts.react = { m = msg, c = "WHISPER", to = whisperTarget(e.a), b = L.NLOG_GRATZ }
         end
     elseif e.k == "boss" then
         if not s.boss then return end
-        -- dungeon bosses only when wanted: raid flag, or a group larger than five
-        local raid = d.r or (tonumber(d.s) or 0) > 5
+        -- dungeon bosses only when wanted: raid instance, or a group larger than ten
+        local raid = d.r == 2 or (tonumber(d.s) or 0) > 10
         if not raid and not s.dungeonBoss then return end
         title = L.NOTIFY_BOSS
         text = L.NOTIFY_BOSS_TEXT:format(Theme.HexColor("gold", d.b or "?"))
@@ -82,6 +85,7 @@ function Notify.Feed(e, test)
             local msg = ns.Messages.Format("gratzProf", { player = display(e.a), profession = ns.Feed.ProfLabel(d.p), skill = d.s or 0 })
             opts.actionText = L.NOTIFY_CLICK_GRATZ
             opts.action = function() congratulate(msg) end
+            opts.react = { m = msg, c = "GUILD", b = L.NLOG_GRATZ }
         end
     elseif e.k == "first" then
         if not s.first then return end
@@ -95,6 +99,7 @@ function Notify.Feed(e, test)
             local msg = ns.Messages.Format("welcome", { player = display(e.a) })
             opts.actionText = L.NOTIFY_CLICK_WELCOME
             opts.action = function() congratulate(msg) end
+            opts.react = { m = msg, c = "GUILD", b = L.NLOG_WELCOME }
         end
     elseif e.k == "leave" then
         if not s.leave then return end
@@ -104,6 +109,9 @@ function Notify.Feed(e, test)
         return
     end
     if test then title = L.TEST_TAG .. " " .. title end
+    -- answer later from the notification log: only for what happened while we
+    -- were online (not for entries that came in with the login sync), never for tests
+    if opts.react and (test or not Notify.onlineSince or (e.t or 0) < Notify.onlineSince) then opts.react = nil end
     -- details on the toast; everything else on hover
     opts.kicker = title
     opts.lines, opts.classes = ns.Feed.ToastInfo(e)
@@ -117,6 +125,8 @@ function Notify.Feed(e, test)
     UI.Toast(title, text, icon, opts)
     if s.chat then ns.Print(text) end
 end
+
+ns.On("LG_READY", function() Notify.onlineSince = Notify.onlineSince or ns.Now() end)
 
 -- Test: one of each, nothing is saved
 function Notify.Test(kind)
@@ -270,6 +280,44 @@ UI.AddPage("notifications", L.PAGE_NOTIFY, 91, function(content, page)
     what:Toggle(L.NOTIFY_UPDATE, get("update"), set("update"), { col = 2, tip = L.NOTIFY_UPDATE_TIP })
     what:Toggle(L.NOTIFY_FAILVOTE, function() return ns.Database.Settings().community.failVote == true end,
         function(v) ns.Database.Settings().community.failVote = v end, { tip = L.NOTIFY_FAILVOTE_TIP })
+
+    what:Toggle(L.NOTIFY_AWARDS, function() return ns.Database.Settings().community.awards ~= false end,
+        function(v) ns.Database.Settings().community.awards = v end, { col = 2, tip = L.NOTIFY_AWARDS_TIP })
+
+    -- history of every notification, the bell on screen
+    local logCard = form:Section(L.NLOG_SECTION)
+    local function lg() return ns.NotifyLog.Settings() end
+    logCard:Toggle(L.NLOG_ENABLED, function() return lg().enabled end, function(v) lg().enabled = v; ns.NotifyLog.Layout() end,
+        { tip = L.NLOG_ENABLED_TIP })
+    logCard:Slider(L.NLOG_MAX, 20, 200, 10, function() return lg().max end, function(v) lg().max = v end, { col = 2 })
+    logCard:Toggle(L.NLOG_BELL, function() return lg().bell end, function(v) lg().bell = v; ns.NotifyLog.Layout() end,
+        { tip = L.NLOG_BELL_OPT_TIP })
+    logCard:Toggle(L.NLOG_BADGE, function() return lg().badge end, function(v) lg().badge = v; ns.NotifyLog.Refresh() end, { col = 2 })
+    logCard:Buttons({ { L.NLOG_OPEN, function() ns.NotifyLog.Show() end, width = 150, icon = "bell" },
+        { L.NLOG_CLEAR, function() ns.NotifyLog.Clear() end, width = 150, icon = "trash-2" } }, { col = 0 })
+
+    -- bug reports (errors of this addon)
+    local bugs = form:Section(L.BUG_SECTION)
+    local function bg() return ns.Bugs.Settings() end
+    bugs:Toggle(L.BUG_SET_ENABLED, function() return bg().enabled end, function(v) bg().enabled = v end, { tip = L.BUG_SET_ENABLED_TIP })
+    bugs:Toggle(L.BUG_SET_BUTTON, function() return bg().button end, function(v) bg().button = v end, { col = 2, tip = L.BUG_SET_BUTTON_TIP })
+    bugs:Segment(L.BUG_SET_SEND, { { value = "ask", text = L.BUG_SET_SEND_ASK }, { value = "auto", text = L.BUG_SET_SEND_AUTO } },
+        function() return bg().send end, function(v) bg().send = v end, { width = 200, tip = L.BUG_SET_SEND_TIP })
+    bugs:Info(L.BUG_SET_QUEUE, function() return L.BUG_SET_QUEUE_N:format(#bg().queue) end)
+    bugs:Toggle(L.BUG_SET_INBOX_TOAST, function() return bg().inboxToast end, function(v) bg().inboxToast = v end,
+        { show = function() return ns.Bugs.IsReceiver() end, tip = L.BUG_SET_INBOX_TOAST_TIP })
+    bugs:Buttons({ { L.BUG_SET_CLEAR_QUEUE, function() wipe(bg().queue); form:Refresh() end, width = 170, icon = "trash-2" },
+        { L.BUG_SET_TEST, function() ns.Bugs.Test() end, width = 170, icon = "bug" } }, { col = 0 })
+    bugs:Buttons({ { L.BUG_SET_INBOX, function() ns.BugInbox.Open() end, width = 170, icon = "bug" } },
+        { col = 0, show = function() return ns.Bugs.IsReceiver() end })
+
+    -- update reminders from officers, and the officers' side
+    local nudge = form:Section(L.NUDGE_SECTION)
+    local function nd() return ns.Versions.NudgeSettings() end
+    nudge:Toggle(L.NUDGE_SET_ACCEPT, function() return nd().accept end, function(v) nd().accept = v end, { tip = L.NUDGE_SET_ACCEPT_TIP })
+    nudge:Slider(L.NUDGE_SET_COOLDOWN, 10, 120, 5, function() return nd().cooldown end, function(v) nd().cooldown = v end,
+        { col = 2, fmt = function(v) return v .. " min" end, locked = function() return not ns.Versions.CanNudge() end,
+          lockTip = L.NUDGE_ONLY_OFFICERS, tip = L.NUDGE_SET_COOLDOWN_TIP })
 
     -- what the congratulation clicks write (placeholders)
     local msgs = form:Section(L.MSG_SECTION, { wide = true })

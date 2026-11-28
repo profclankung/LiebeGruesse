@@ -28,6 +28,8 @@ local function checkInstance()
     local inside, kind = IsInInstance()
     local name, _, _, _, _, _, _, mapID = ns.Call(GetInstanceInfo)
     if inside and name and (kind == "party" or kind == "raid") then
+        -- ten-player dungeons in a raid group count as dungeon
+        if kind == "raid" and not ns.RaidInstance() then kind = "party" end
         if current and current.id == mapID then return end
         local s = data()
         local entry = s.instances[name] or { runs = 0, kind = kind }
@@ -35,6 +37,7 @@ local function checkInstance()
         if not lastLeft[mapID] or ns.Now() - lastLeft[mapID] > 1800 then
             entry.runs = entry.runs + 1
             entry.last = ns.Now()
+            Stats.NewRun()
         end
         entry.kind = kind
         s.instances[name] = entry
@@ -47,14 +50,43 @@ end
 ns.On("PLAYER_ENTERING_WORLD", function() ns.After(2, checkInstance) end)
 ns.On("ZONE_CHANGED_NEW_AREA", function() ns.After(2, checkInstance) end)
 
+-- pulls, wipes, kills, fastest kill and first-try kills per boss. A first try is
+-- a kill on the first pull of that boss since entering the instance (a new run).
+local pullStart, runPulls = nil, {}
+ns.On("ENCOUNTER_START", function(_, encounterID, name)
+    if ns.IsSecret(name) or type(name) ~= "string" then return end
+    pullStart = GetTime()
+    local s = data()
+    local b = s.bosses[name] or { k = 0, w = 0 }
+    b.p = (b.p or 0) + 1
+    b.where = current and current.name or b.where
+    b.kind = current and current.kind or b.kind
+    if ns.Num(encounterID) then b.id = encounterID end
+    s.bosses[name] = b
+    runPulls[name] = (runPulls[name] or 0) + 1
+end)
 ns.On("ENCOUNTER_END", function(_, _, name, _, _, success)
     if ns.IsSecret(name) or ns.IsSecret(success) or type(name) ~= "string" then return end
     local s = data()
     local b = s.bosses[name] or { k = 0, w = 0 }
-    if success == 1 then b.k = b.k + 1; b.last = ns.Now() else b.w = b.w + 1 end
+    if success == 1 then
+        b.k = b.k + 1; b.last = ns.Now()
+        local dur = pullStart and math.floor(GetTime() - pullStart + 0.5)
+        if dur and dur > 0 and (not b.best or dur < b.best) then b.best = dur end
+        if (runPulls[name] or 1) <= 1 then
+            b.ft = (b.ft or 0) + 1
+            if ns.Achievements then ns.Achievements.Bump((b.kind == "raid") and "firstTryRaid" or "firstTryDungeon") end
+        end
+    else
+        b.w = b.w + 1
+    end
+    pullStart = nil
     b.where = current and current.name or b.where
+    b.kind = current and current.kind or b.kind
     s.bosses[name] = b
 end)
+-- a new instance visit starts the "first try" count again
+function Stats.NewRun() wipe(runPulls) end
 
 local seenSources = {}
 ns.On("LOOT_OPENED", function()
@@ -133,8 +165,11 @@ function Stats.Collect(which)
         local s = data(char)
         for _, k in ipairs({ "epicsSeen", "epicsLooted", "legendary", "deaths", "quests", "goldIn", "goldOut" }) do out[k] = out[k] + s[k] end
         for name, b in pairs(s.bosses) do
-            local o = out.bosses[name] or { name = name, k = 0, w = 0, where = b.where }
+            local o = out.bosses[name] or { name = name, k = 0, w = 0, p = 0, ft = 0, where = b.where, kind = b.kind }
             o.k, o.w = o.k + b.k, o.w + b.w
+            o.p, o.ft = o.p + (b.p or (b.k + b.w)), o.ft + (b.ft or 0)
+            if b.best and (not o.best or b.best < o.best) then o.best = b.best end
+            o.kind = o.kind or b.kind
             o.last = math.max(o.last or 0, b.last or 0)
             out.bosses[name] = o
             out.kills, out.wipes = out.kills + b.k, out.wipes + b.w

@@ -78,6 +78,18 @@ local GROUPS = {
           run = function() ns.Window.Show("versions") end },
         { cmd = "ver", desc = "Version check in your group (chat output)",
           run = function() ns.Versions.CheckGroup() end },
+        { cmd = "nudge", desc = "Guild master/officers: remind every online member with an older addon version (cooldown)",
+          run = function() ns.Versions.NudgeAll() end },
+        { cmd = "log", desc = "Notification history: everything the addon showed you, with unread ones on top",
+          run = function() ns.NotifyLog.Show() end, aliases = { "notifications" } },
+        { cmd = "bug", desc = "Report the last error of this addon (opens the bug report)",
+          run = function()
+              if ns.Bugs.pending then ns.Bugs.ShowDialog(ns.Bugs.pending) else ns.Print(ns.L.BUG_NONE) end
+          end },
+        { cmd = "bugs", desc = "Guild master/officers: bug reports from the guild (Guild admin › Bug reports)",
+          run = function() ns.BugInbox.Open() end },
+        { cmd = "download", desc = "Copy the CurseForge link of the addon (install once from the website, then the CurseForge app updates it)",
+          run = function() ns.ShowDownloadLink(); ns.Print(ns.L.DL_CMD_DONE:format(ns.DOWNLOAD_URL)) end, aliases = { "curseforge", "link" } },
         { cmd = "changelog", desc = "All changes of the addon",
           run = function() ns.WhatsNew.Show(nil, true) end, aliases = { "news" } },
         { cmd = "credits", desc = "Credits: maps, font, licenses",
@@ -100,6 +112,8 @@ local GROUPS = {
           run = function() ns.LifeStats.Inspect("target") end },
         { cmd = "stats", desc = "Statistics: life statistics, guild, addon records",
           run = function() ns.Window.Show("stats") end },
+        { cmd = "achievements", desc = "Achievements: dungeon, open world and raid – progress, badges, unlock dates",
+          run = function() ns.Window.Show("achievements") end, aliases = { "ach" } },
     } },
     { key = "lc", title = "Loot Council", module = "council", commands = {
         { cmd = "lc", desc = "Open / close the council window",
@@ -151,6 +165,8 @@ local GROUPS = {
           run = function() ns.BlessAssign.Toggle() end },
         { cmd = "attune", desc = "Attunements and dungeon keys of the guild",
           run = function() ns.Window.Show("attune") end, aliases = { "keys" } },
+        { cmd = "runs", desc = "Speedruns: guild records, your runs, boss pulls and wipes",
+          run = function() ns.Window.Show("runs") end, aliases = { "speedrun", "speedruns" } },
     } },
     { key = "cd", title = "Cooldowns", module = "cooldowns", commands = {
         { cmd = "cd", desc = "Cooldown setup", run = function() ns.Window.Show("cooldowns") end,
@@ -213,6 +229,11 @@ local GROUPS = {
     { key = "community", title = "Community", module = "community", commands = {
         { cmd = "community", desc = "Boards, pin wall and history",
           run = function() ns.Window.Show("community") end },
+        { cmd = "awards", desc = "Tonight's awards of the last raid night (post them to the guild with the button on the community page)",
+          run = function()
+              local R = ns.CommunityRaid
+              if not R.ShowAwardsToast(R.LastNight(7)) then ns.Print(ns.L.AWARDS_NONE) end
+          end },
     } },
     { key = "test", title = "Test everything (alone, nothing is sent)", runnable = true, commands = {
         { cmd = "test", desc = "Notification, feed, pepega death and fail-pull vote one after another",
@@ -220,6 +241,7 @@ local GROUPS = {
         { cmd = "test list", desc = "Lists every test command in the chat (also: /lg tests – the test suite page)",
           run = function() ns.PrintTests() end, suite = false },
         { cmd = "test failpull", desc = "Fail-pull vote with made-up raiders (20 s)",
+          toggle = true, active = function() return ns.Community.TestVoteActive() end, stop = function() ns.Community.StopTestVote() end, duration = 20,
           run = function() ns.Test.FailVote() end },
         { cmd = "test mispull", desc = "How a mispull report looks", run = function() ns.Test.Mispull() end },
         { cmd = "test death", desc = "How a pepega death looks", run = function() ns.Test.Death() end },
@@ -345,7 +367,30 @@ local GROUPS = {
         { cmd = "test boards", desc = "Sample entries on all community leaderboards and the quote of the week (2 min, nothing stored or sent)",
           run = function() ns.CommunityFun.Test() end,
           toggle = true, active = function() return ns.Test.BoardsActive() end, stop = function() ns.Test.StopBoards() end, duration = 120 },
-        { cmd = "test badge", desc = "The notification for a new badge (nothing stored)", run = function() ns.Badges.Test() end },
+        { cmd = "test badge", desc = "The notification for a new achievement (nothing stored)", run = function() ns.Badges.Test() end,
+          area = "achievements" },
+        { cmd = "test raidnight", desc = "Raid night boards: raid instance, guild raid, recorder, potions known, last night's awards (nothing sent)",
+          run = function() ns.CommunityRaid.Report() end, area = "community" },
+        { cmd = "test awards", desc = "Tonight's awards with sample winners (only for you, nothing stored or sent)",
+          run = function() ns.Test.Awards() end, area = "community",
+          toggle = true, active = function() return ns.Test.BoardsActive() end, stop = function() ns.Test.StopBoards() end, duration = 120 },
+        { cmd = "test runs", args = "[ids]", desc = "Speedruns: instance, run in progress, splits; ids: encounter IDs seen and learned end bosses (nothing sent)",
+          run = function(rest) ns.Runs.Report(rest) end, area = "runs" },
+        { cmd = "test runtimer", desc = "The speedrun timer with sample splits (30 s)", run = function() ns.RunsTimer.Test() end, area = "runs",
+          toggle = true, active = function() return ns.RunsTimer.test ~= nil end, stop = function() ns.RunsTimer.Test(true) end, duration = 30 },
+        { cmd = "test runshare", desc = "The Discord copy box and chat line for a sample record (nothing sent)",
+          run = function() ns.Test.RunShare() end, area = "runs" },
+        { cmd = "test bug", desc = "A sample error of this addon: the report button and dialog (nothing sent or stored)",
+          run = function() ns.Bugs.Test() end, area = "bugs" },
+        { cmd = "test bugs", desc = "Bug reports: errors known, queue, officers online, error hook (nothing sent)",
+          run = function() ns.Bugs.Report() end, area = "bugs" },
+        { cmd = "test buginbox", desc = "Officers: two sample reports in the bug inbox (removed after 2 min)",
+          run = function() ns.BugInbox.Test() end, area = "bugs",
+          toggle = true, active = function() return ns.BugInbox.HasTest() end, stop = function() ns.BugInbox.ClearTest() end, duration = 120 },
+        { cmd = "test nudge", desc = "The update reminder an officer can send (only for you, nothing sent)",
+          run = function() ns.Versions.ShowNudge(ns.Test.NextVersion(), ns.Names.Me(), true) end, area = "versions" },
+        { cmd = "test notifylog", desc = "Three sample notifications and the notification history (marked as test)",
+          run = function() ns.NotifyLog.Test() end, area = "notify" },
         { cmd = "test greet", desc = "Shows the login greeting that would be written to guild chat (nothing sent)",
           run = function() ns.Greet.Test() end },
         { cmd = "test profcd", desc = "Profession cooldowns with sample entries", run = function() ns.Test.ProfCooldowns() end },
@@ -375,6 +420,21 @@ local GROUPS = {
     } },
 }
 ns.Commands = GROUPS
+
+-- every test: afterwards the small "test running" popup checks whether one keeps running
+for _, g in ipairs(GROUPS) do
+    if g.key == "test" then
+        for _, c in ipairs(g.commands) do
+            local run = c.run
+            if run then
+                c.run = function(...)
+                    run(...)
+                    if ns.TestPopup then ns.After(0.3, ns.TestPopup.Check) end
+                end
+            end
+        end
+    end
+end
 
 local byCommand = {}
 local function register(c)

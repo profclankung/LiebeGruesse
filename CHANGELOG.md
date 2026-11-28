@@ -2,6 +2,48 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.90] – 2026-11-28
+
+- feat(runs): new page Speedruns (Raid tools) – dungeon and raid runs from the first pull to the end boss, with splits, deaths and an optional death penalty
+- feat(runs): run timer on screen with splits against your best run or the guild record (green ahead, red behind); movable, lock, scale, only the time in combat
+- feat(runs): wings count on their own (Scarlet Monastery, Dire Maul, Maraudon, Stratholme, Blackrock Spire); end bosses learned by encounter ID
+- feat(runs): guild records and personal bests shared with the guild – checked first (known instance, end boss killed, realistic time, group size, splits in order, sender in the group)
+- feat(runs): share every record in guild or party chat, or copy it for Discord
+- feat(runs): boss stats – pulls, wipes, kill rate, fastest kill and first-try kills per boss
+- feat(community): raid night boards count only inside raid instances with a guild raid; boards grouped into Raid night and Around Azeroth, each with its counting rule
+- feat(community): new raid night boards – first to die, last one standing, not ready, chatterbox, roll king, snake eyes, emote spammer, chugger; flask champion and forgot food are back
+- feat(community): Tonight's awards after a raid night – toast, card on the page, one click posts them to the guild
+- fix(community): jumps count only real jumps inside the raid (no presses in mid-air, swimming, in cities); AFK only inside the raid instance
+- fix(community): pepega deaths only in boss kills and only for players alive at the pull – ghosts and feigning hunters no longer count
+- fix(community): interrupts count only when the target was casting
+- feat(achievements): new page Achievements (Personal) – dungeon, open world and raid with progress bars, counters, tier badges and unlock dates; guild overview of who has which tier
+- feat(achievements): new achievements for speedruns, first-try and deathless kills, full clears, attunements, quests, zones, rares, professions and the new raid night boards
+- feat(bugs): errors of this addon are caught and grouped; a small "Report bug" button opens the report (stack, count, what you were doing)
+- feat(bugs): reports go to the guild master and officers; nobody online – they wait and go out when an officer logs in
+- feat(bugs): bug inbox for officers in Guild admin – new / seen / solved, stack to copy, delete all
+- feat(notify): notification history with a movable bell and unread count – mark all read, clear
+- feat(versions): officers remind members with an older version – guild-wide (cooldown) or one player, at most once a day
+- feat(ui): copy boxes open with the text selected – press Ctrl+C
+- change(community): the badges tab moved to Achievements › Guild overview
+- feat(runs): bosses of every dungeon from the client data of WoW Forever – instance IDs, encounter IDs, NPC IDs and German names, incl. the new Forever dungeons; no more guessed end bosses (Maraudon is one run)
+- feat(runs): bosses without an encounter count when seen dead (target, boss frames, loot) – only during a run
+- change(runs): records only accept bosses of their own wing; splits use the same boss names on every client
+- change(runs): the run timer is off by default (Speedruns › Settings)
+- feat(versions): CurseForge – "Copy download link" on the update card, /lg download; update texts point to the CurseForge app
+- feat(ui): every window has a cross – also toasts, the blessing bar, the loot master bar, the run timer, the bell and the fail-pull square
+- feat(tests): a small popup shows running tests with "Stop tests" – no /reload needed
+- perf(community): raid night counting asks the group at most every 2 s; the death watch runs only in a raid night or a speedrun
+- perf(achievements): checked at most every 30 s and never in combat; own stats cached
+- perf(community): interrupts read only the target's casts (unit events)
+- fix(raid): raids count only in real raid instances – ten-player dungeons in a raid group (Upper Blackrock Spire) are dungeons again for raid night boards, awards, achievements, boss stats, the fail-pull vote and boss notifications
+- fix(achievements): raid data recorded in dungeons before this fix no longer counts; raid achievements start fresh
+- feat(community): Pepega around Azeroth – own deaths in the open world (falls and drowning shown apart) next to the raid Pepega deaths
+- change(community): spirit healer regulars, guard victims and auction house shark removed (boards, achievements and counting)
+- feat(achievements): eight tiers – bronze, silver, gold, platinum, emerald, diamond, master and challenger
+- feat(achievements): new Pepega around Azeroth and Gravity Tester; Master Crafter counts profession skill points
+- change(achievements): guild overview reworked – member ranking by tier points with the selected member's badges, or every achievement with its holders and highest tier; category filter
+- feat(notify): congratulations and welcomes can be sent once from the notification history – only when not answered on the toast and only for what happened while you were online
+
 ## [1.0.89] – 2026-11-27
 
 - change(blessings): smart assign gives every class its own blessing first (Might or Wisdom) and Kings second – one paladin = Might / Wisdom only, two = plus Kings from the one who knows it

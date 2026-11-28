@@ -1,6 +1,6 @@
 -- Daily counters every player records about themselves: time as a ghost,
--- deaths by guards, spirit healer, flights, hearthstone, junk sold, vendor
--- shopping, auctions, mails, interrupts, night owl / early bird and login days.
+-- flights, hearthstone, junk sold, vendor shopping, mails, interrupts,
+-- night owl / early bird and login days.
 -- One running entry per player and day ("dy:<player>:<day>"); the guild keeps
 -- the highest value of every counter (Community addEvent merges them).
 local _, ns = ...
@@ -8,7 +8,8 @@ local Community, Names = ns.Community, ns.Names
 local Daily = {}
 ns.CommunityDaily = Daily
 
--- counter -> highest believable value for one day (also used to check others' data)
+-- counter -> highest believable value for one day (also used to check others' data;
+-- guard, spirit and ah are no longer recorded since 1.0.90, older entries stay valid)
 Daily.LIMITS = {
     ghost = 86400, guard = 100, spirit = 100, taxi = 500, hearth = 200, junk = 1e8, shop = 1e9,
     ah = 5000, mail = 2000, kick = 5000, owl = 1, early = 1, login = 1,
@@ -95,19 +96,6 @@ end
 ns.On("PLAYER_ALIVE", alive)
 ns.On("PLAYER_UNGHOST", alive)
 
--- killed by a city guard (our target when we died, see CommunityFun)
-local GUARD_WORDS = { "guard", "wache", "grunt", "bluffwatcher", "deathguard", "mountaineer", "gebirgsjäger",
-    "sentinel", "schildwache", "peacekeeper", "friedenswahrer", "protector", "beschützer", "kor'kron" }
-function Daily.IsGuard(name)
-    if type(name) ~= "string" then return false end
-    local lower = name:lower()
-    for _, w in ipairs(GUARD_WORDS) do if lower:find(w, 1, true) then return true end end
-    return false
-end
-
--- spirit healer: accepting the resurrection sickness
-if hooksecurefunc and AcceptXPLoss then hooksecurefunc("AcceptXPLoss", function() Daily.Add("spirit") end) end
-
 ---------------------------------------------------------------------------
 -- Travel: flight master, hearthstone
 ---------------------------------------------------------------------------
@@ -117,14 +105,29 @@ local HEARTH = { [8690] = true }
 ---------------------------------------------------------------------------
 -- Interrupts: our own interrupt spell, then the target's cast stops
 ---------------------------------------------------------------------------
-local kickAt
+-- the kick counts only when the target really was casting (start/stop events of the target)
+-- (events of the target only: a frame with unit events, nothing for the rest of the raid)
+local kickAt, targetCasting = nil, false
+local castFrame = CreateFrame("Frame")
+for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_CHANNEL_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED" }) do
+    if castFrame.RegisterUnitEvent then pcall(castFrame.RegisterUnitEvent, castFrame, e, "target") end
+end
+castFrame:SetScript("OnEvent", function(_, event)
+    if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then targetCasting = true
+    else ns.After(0.7, function() targetCasting = false end) end
+end)
+Daily.castFrame = castFrame
+ns.On("PLAYER_TARGET_CHANGED", function()
+    targetCasting = (ns.Call(UnitCastingInfo, "target") or ns.Call(UnitChannelInfo, "target")) ~= nil
+end)
+Daily.TargetCasting = function() return targetCasting end
 ns.On("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, spellID)
     if unit ~= "player" or ns.IsSecret(spellID) then return end
     if HEARTH[spellID] then Daily.Add("hearth"); return end
     local S = ns.CooldownSpells
     local id = S and S.Resolve(spellID)
     local spell = id and S.byId[id]
-    if spell and spell.cat == "interrupt" then kickAt = GetTime() end
+    if spell and spell.cat == "interrupt" and targetCasting then kickAt = GetTime() end
 end)
 local function interrupted(_, unit)
     if not kickAt or GetTime() - kickAt > 0.6 then return end
@@ -208,10 +211,6 @@ ns.On("MERCHANT_CLOSED", function()
 end)
 
 ---------------------------------------------------------------------------
--- Auction house and mail
+-- Mail
 ---------------------------------------------------------------------------
-ns.On("CHAT_MSG_SYSTEM", function(_, text)
-    if ns.IsSecret(text) then return end
-    if ERR_AUCTION_STARTED and text == ERR_AUCTION_STARTED then Daily.Add("ah") end
-end)
 ns.On("MAIL_SEND_SUCCESS", function() Daily.Add("mail") end)

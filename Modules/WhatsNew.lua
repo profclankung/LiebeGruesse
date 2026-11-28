@@ -38,6 +38,7 @@ local AREAS = {
     blessings = "Blessings", crafts = "Professions", prof = "Professions", professions = "Professions", profsync = "Profession sync", trade = "Trade timer", test = "Test commands",
     attune = "Attunements", stats = "Statistics", life = "Statistics", tooltip = "Tooltips", tooltips = "Tooltips",
     settings = "Settings", greet = "Login greeting", badges = "Badges", community = "Community", versions = "Versions", inspect = "Inspect", profile = "Profile sync",
+    runs = "Speedruns", achievements = "Achievements", bugs = "Bug reports",
 }
 function WN.Area(scope)
     if not scope or scope == "" then return nil end
@@ -86,6 +87,9 @@ local function create()
     -- footer: all changes (quiet) · close (accent)
     frame.all = UI.Button(frame, L.WN_ALL, 140, 32, function() WN.Show(nil, true) end)
     frame.all:SetPoint("BOTTOMLEFT", 16, 16)
+    UI.CloseX(frame)
+    _G.LiebeGruesseWhatsNew = frame
+    tinsert(UISpecialFrames, "LiebeGruesseWhatsNew")
     frame.ok = UI.Button(frame, L.WN_CLOSE, 130, 32, function() frame:Hide() end)
     frame.ok:SetPoint("BOTTOMRIGHT", -16, 16)
     UI.Skin(frame.ok, "accentDim", "accent")

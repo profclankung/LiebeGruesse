@@ -74,11 +74,19 @@ local function create()
     ns.Movers.Attach("lcBar", frame)
     frame.grip = UI.Fill(frame, "accent", "ARTWORK")
     frame.grip:SetPoint("TOPLEFT"); frame.grip:SetPoint("BOTTOMLEFT"); frame.grip:SetWidth(3)
+    frame.closeX = UI.IconButton(frame, "x", 14, function()
+        Bar.closed = true
+        frame:Hide()
+        ns.Print(L.LCB_CLOSED)
+    end)
+    frame.closeX:SetPoint("LEFT", frame, "RIGHT", 2, 0)
+    frame.closeX.tip = L.CLOSE
 end
 
 local function shouldShow(o)
     if not o.enabled or ns.Database.Settings().modules.council == false then return false end
     if ns.Movers.active then return true end
+    if Bar.closed then return false end
     -- tests show the bar for a few minutes, so it can be tried without being loot master
     -- (a test session left open does not keep it on screen)
     if Bar.testUntil and GetTime() < Bar.testUntil then return true end
@@ -158,6 +166,9 @@ function Bar.Layout()
     frame:SetShown(n > 0)
 end
 
+-- closed with the cross: back with the next loot method change or zone
+ns.On("PARTY_LOOT_METHOD_CHANGED", function() Bar.closed = nil end)
+ns.On("PLAYER_ENTERING_WORLD", function() Bar.closed = nil end)
 for _, e in ipairs({ "LG_COUNCIL", "GROUP_ROSTER_UPDATE", "PARTY_LOOT_METHOD_CHANGED", "LG_MODULES", "PLAYER_ENTERING_WORLD", "LG_MOVERS" }) do
     ns.On(e, function() ns.Debounce("lc-bar", 0.3, Bar.Layout) end)
 end

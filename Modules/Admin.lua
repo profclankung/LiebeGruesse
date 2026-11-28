@@ -319,6 +319,8 @@ Admin.RIGHTS = {
     { key = "announce", text = "ADM_R_ANNOUNCE", gm = true, officer = true, council = false },
     { key = "feed", text = "ADM_R_FEED", gm = true, officer = true, council = false },
     { key = "key", text = "ADM_R_KEY", gm = true, officer = true, council = false },
+    { key = "bugs", text = "ADM_R_BUGS", gm = true, officer = true, council = false },
+    { key = "nudge", text = "ADM_R_NUDGE", gm = true, officer = true, council = false },
 }
 local COLUMNS = { "gm", "officer", "council" }
 
@@ -401,11 +403,15 @@ Admin.RightsMatrix = rightsMatrix
 ---------------------------------------------------------------------------
 -- Page: Guild › Admin
 ---------------------------------------------------------------------------
-UI.AddPage("admin", L.PAGE_ADMIN, 32, function(content, page)
+UI.AddPage("admin", L.PAGE_ADMIN, 32, function(root, page)
+    -- tabs: overview (rights and shared settings) and the bug inbox (officers)
+    local holder = CreateFrame("Frame", nil, root)
+    holder:SetPoint("TOPLEFT", 0, -38)
+    holder:SetPoint("BOTTOMRIGHT")
+    local content = CreateFrame("Frame", nil, holder)
+    content:SetAllPoints()
     local form = UI.Form(content)
-    page.Search = function(text) return form:Filter(text) end
     page.SearchEnter = function() form:JumpFirst() end
-    page.searchRow = true
     page.head = L.HEAD_ADMIN
     form.scroll:SetPoint("TOPLEFT")
     form.scroll:SetPoint("BOTTOMRIGHT", -8, 0)
@@ -494,8 +500,50 @@ UI.AddPage("admin", L.PAGE_ADMIN, 32, function(content, page)
     matrix.control = matrix
     rights:Note(L.ADM_RIGHTS_HINT, { height = 30 })
 
-    page.OnShow = function() form:Refresh() end
-end, { section = "guild", icon = "shield", visible = function() return Admin.IsStaff() end })
+    local inbox = ns.BugInbox.Build(holder)
+    inbox:SetAllPoints()
+    local tabs = { overview = content, bugs = inbox }
+    content.Refresh = function() form:Refresh() end
+    content.SearchHits = function(q) return form:Filter(q) end
+    content.SearchApply = function(q) form:Filter(q) end
+    inbox.SearchHits = function(q) inbox.Refresh(); return inbox.list:SearchHits(q) end
+    inbox.SearchApply = function(q) inbox.list:ShowFirstHit(q) end
+    local function bugTitle()
+        local n = ns.BugInbox.Count("new")
+        return n > 0 and L.BUG_TAB_N:format(n) or L.BUG_TAB
+    end
+    local bar = UI.SubTabs(root, { { key = "overview", title = L.ADM_TAB_OVERVIEW }, { key = "bugs", title = L.BUG_TAB_N:format(99) } }, function(key)
+        if key == "bugs" and not ns.Bugs.IsReceiver() then key = "overview" end
+        content:SetShown(key == "overview")
+        inbox:SetShown(key == "bugs")
+        tabs[key].Refresh()
+    end)
+    bar:SetPoint("TOPLEFT")
+    bar:SetPoint("TOPRIGHT", root, "TOPRIGHT", -ns.Window.SearchReserve(), 0)
+    local function titles()
+        for _, b in ipairs(bar.buttons) do
+            if b.key == "bugs" then
+                b.text:SetText(bugTitle())
+                b:SetShown(ns.Bugs.IsReceiver())
+            end
+        end
+    end
+    titles()
+    bar:Select("overview")
+    ns.BugInbox.ShowTab = function() if ns.Bugs.IsReceiver() then bar:Select("bugs") end end
+    page.Search = function(text)
+        page.query = text
+        return UI.TabSearch(bar, tabs, text)
+    end
+    page.OnShow = function()
+        titles()
+        if bar.current == "bugs" and not ns.Bugs.IsReceiver() then bar:Select("overview"); return end
+        tabs[bar.current].Refresh()
+    end
+end, { section = "guild", icon = "shield", visible = function() return Admin.IsStaff() end, badge = function()
+    local n = ns.BugInbox and ns.Bugs.IsReceiver() and ns.BugInbox.Count("new") or 0
+    return n > 0 and tostring(n) or nil
+end })
 
 -- the roster, ranks or council can change who sees the page: rebuild the sidebar only then
 local lastAllowed

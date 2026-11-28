@@ -37,20 +37,36 @@ end
 ---------------------------------------------------------------------------
 -- Storage and sync
 ---------------------------------------------------------------------------
+-- running counters: one entry per player and day/night that only grows
+local RUNNING = { jump = true, daily = true, rnight = true, chug = true, wdeath = true }
+
+-- raid night entries count only when recorded inside a real raid instance
+-- (marked ri = 1 since 1.0.90; older entries came from ten-player dungeons too)
+local RAID_KINDS = { failpull = true, death = true, first2die = true, laststand = true, afk = true, jump = true,
+    chug = true, rnight = true, consum = true }
+Community.RAID_KINDS = RAID_KINDS
+function Community.Counts(e)
+    if not RAID_KINDS[e.k] or e.ri == 1 then return true end
+    return type(e.id) == "string" and e.id:sub(1, 5) == "test:"
+end
 local function addEvent(e, broadcast)
     if type(e) ~= "table" or type(e.id) ~= "string" or type(e.t) ~= "number" or type(e.k) ~= "string" then return false end
+    -- raid night counters (recorded about others) must stay within sane limits
+    if e.k == "rnight" and not (ns.CommunityRaid and ns.CommunityRaid.Valid(e.d)) then return false end
     if store().removed[e.id] then return false end
+    if e.ri ~= nil and e.ri ~= 1 then e.ri = nil end
     local list = store().events
     for _, old in ipairs(list) do
         if old.id == e.id then
             -- running counters (jumps of a raid night, daily counters) grow: keep the higher values
-            if (e.k == "jump" or e.k == "daily") and e.k == old.k and type(e.d) == "table" and type(old.d) == "table" then
+            if RUNNING[e.k] and e.k == old.k and type(e.d) == "table" and type(old.d) == "table" then
                 local grew = false
                 for k, v in pairs(e.d) do
                     if type(v) == "number" and v > (tonumber(old.d[k]) or 0) then old.d[k] = v; grew = true end
                 end
                 if not grew then return false end
                 old.t = math.max(old.t, e.t)
+                if e.ri == 1 then old.ri = 1 end
                 if broadcast and IsInGuild() then Comm.Send("CE", { e = e }, "GUILD", { priority = "bulk" }) end
                 redraw()
                 return true
@@ -160,7 +176,7 @@ Comm.Register("CR", function(data, sender)
 end)
 
 -- kinds every player records about themselves: only from that player, only in guild chat
-local SELF_KINDS = { fall = true, repair = true, session = true, afk = true, jump = true, daily = true }
+local SELF_KINDS = { fall = true, repair = true, session = true, afk = true, jump = true, daily = true, chug = true, wdeath = true }
 local function selfEventOk(e, sender)
     if not Names.Same(e.who, sender) or type(e.d) ~= "table" then return false end
     if e.t > ns.Now() + 120 then return false end
@@ -169,7 +185,12 @@ local function selfEventOk(e, sender)
     if e.k == "fall" then return type(e.d.c) == "string" and #e.d.c <= 10 end
     if e.k == "afk" then return true end
     if e.k == "daily" then return ns.CommunityDaily ~= nil and ns.CommunityDaily.Valid(e.d) end
-    if e.k == "jump" then return type(e.d.n) == "number" and e.d.n > 0 and e.d.n < 50000 end
+    if e.k == "jump" then return type(e.d.n) == "number" and e.d.n > 0 and e.d.n < 5000 end
+    if e.k == "chug" then return type(e.d.n) == "number" and e.d.n > 0 and e.d.n < 500 end
+    if e.k == "wdeath" then
+        return type(e.d.n) == "number" and e.d.n > 0 and e.d.n <= 500 and (e.d.e == nil or (type(e.d.e) == "number" and e.d.e >= 0 and e.d.e <= e.d.n))
+            and type(e.d.day) == "string" and e.d.day:match("^%d%d%d%d%d%d%d%d$") ~= nil
+    end
     return false
 end
 Community.SelfEventOk = selfEventOk
@@ -178,6 +199,8 @@ Comm.Register("CE", function(data, sender, channel)
     local e = type(data.e) == "table" and ns.Clean(data.e, 4)
     if not e then return end
     if SELF_KINDS[e.k] and (channel ~= "GUILD" or not selfEventOk(e, sender)) then return end
+    -- raid night entries about others: only from guild members in the guild channel
+    if (e.k == "rnight" or e.k == "first2die" or e.k == "laststand") and (channel ~= "GUILD" or not ns.Guild.IsMember(sender)) then return end
     addEvent(e)
 end)
 Comm.Register("CP", function(data) addPost(data.p) end)
@@ -259,6 +282,7 @@ local function guildGroup()
     end
     return guildies >= math.max(2, total / 2)
 end
+Community.GuildGroup = guildGroup
 
 local function today() return date("%Y%m%d") end
 
@@ -295,7 +319,7 @@ local function tally()
         return
     end
     ns.Print(L.FP_RESULT:format(Names.Display(best), bestN, voters, v.boss or "?"))
-    addEvent({ id = "fp:" .. v.id, t = ns.Now(), k = "failpull", who = best, d = { b = v.boss, n = bestN, of = voters } },
+    addEvent({ id = "fp:" .. v.id, t = ns.Now(), k = "failpull", who = best, ri = 1, d = { b = v.boss, n = bestN, of = voters } },
         Community.IsRecorder())
 end
 
@@ -322,10 +346,14 @@ local function showVoteIcon()
         voteIcon.icon:SetPoint("CENTER", 0, 3)
         voteIcon.time = UI.Text(voteIcon, 9, "muted", "CENTER")
         voteIcon.time:SetPoint("BOTTOM", 0, 2)
-        voteIcon:SetScript("OnClick", function(self)
+        voteIcon:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        voteIcon:SetScript("OnClick", function(self, button)
             self:Hide()
-            if vote then showVote() end
+            if button ~= "RightButton" and vote then showVote() end
         end)
+        voteIcon.closeX = UI.IconButton(voteIcon, "x", 11, function() voteIcon:Hide() end)
+        voteIcon.closeX:SetPoint("TOPRIGHT", 1, 1)
+        voteIcon.closeX.tip = L.CLOSE
         voteIcon:SetScript("OnEnter", function(self)
             UI.Tooltip(self, vote and L.FP_TITLE:format(vote.boss or "?") or L.MOVER_FAILVOTE, { L.FP_ICON_TIP })
         end)
@@ -423,6 +451,15 @@ end
 
 function Community.Vote(target) castVote(target) end
 
+-- the test vote (/lg test failpull): running? and stop it
+function Community.TestVoteActive() return vote ~= nil and vote.test == true end
+function Community.StopTestVote()
+    if not (vote and vote.test) then return end
+    vote = nil
+    if votePopup then votePopup:Hide() end
+    if voteIcon then voteIcon:Hide() end
+end
+
 -- Test: a local fail-pull vote with made-up raiders (nothing is sent or saved)
 local FAKE = { { "Arwen Silverleaf", "PRIEST" }, { "Borin Ironfist", "WARRIOR" }, { "Celia Morningdew", "MAGE" },
     { "Dorn Shadowpath", "ROGUE" }, { "Elara Stormcall", "SHAMAN" }, { "Finn Greengrove", "DRUID" }, { "Greta Sparkstrike", "WARLOCK" } }
@@ -464,7 +501,7 @@ Comm.Register("FO", function(data) if type(data.id) == "string" then openVote(da
 ns.On("ENCOUNTER_END", function(_, encounterID, name, _, _, success)
     if ns.IsSecret(success) or ns.IsSecret(name) then return end
     if ns.Database.Settings().modules.community == false or not guildGroup() then return end
-    if success == 1 then return end
+    if success == 1 or not ns.RaidInstance() then return end
     local id = ("%s:%s:%d"):format(tostring(encounterID), today(), math.floor(ns.Now() / 60))
     ns.After(2, function()
         openVote(id, name)
@@ -480,61 +517,7 @@ function Community.ReportMispull(key)
     ns.Print(L.MP_REPORTED:format(Names.Display(key)))
 end
 
----------------------------------------------------------------------------
--- Pepega deaths: died while the group did not wipe
----------------------------------------------------------------------------
-local dead, watching = {}, false
-local function poll()
-    if not watching then return end
-    for unit, key in ns.GroupUnits() do
-        local isDead = ns.Call(UnitIsDeadOrGhost, unit)
-        if isDead == true and not dead[key] then dead[key] = ns.Now() end
-    end
-    C_Timer.After(1, poll)
-end
-
-local function finishFight(wiped, boss)
-    watching = false
-    local total, deaths = 0, 0
-    for _ in ns.GroupUnits() do total = total + 1 end
-    for _ in pairs(dead) do deaths = deaths + 1 end
-    if not wiped and deaths > 0 and deaths < total * 0.8 and guildGroup() and ns.Database.Settings().modules.community ~= false then
-        local recorder = Community.IsRecorder()
-        for key, t in pairs(dead) do
-            addEvent({ id = ("pd:%s:%d"):format(key, math.floor(t / 60)), t = t, k = "death", who = key, d = { b = boss } }, recorder)
-        end
-    end
-    wipe(dead)
-end
-
-ns.On("PLAYER_REGEN_DISABLED", function()
-    if not IsInGroup() or watching then return end
-    wipe(dead)
-    watching = true
-    C_Timer.After(1, poll)
-end)
-ns.On("ENCOUNTER_START", function()
-    if not IsInGroup() then return end
-    wipe(dead)
-    if not watching then watching = true; C_Timer.After(1, poll) end
-end)
-ns.On("ENCOUNTER_END", function(_, _, name, _, _, success)
-    if ns.IsSecret(success) then return end
-    ns.After(1, function() finishFight(success ~= 1, name) end)
-end)
-ns.On("PLAYER_REGEN_ENABLED", function()
-    ns.After(2, function()
-        if watching and not ns.EncounterInProgress() then
-            -- a trash fight ended: everyone dead (or nearly) counts as a wipe
-            local total, alive = 0, 0
-            for unit in ns.GroupUnits() do
-                total = total + 1
-                if ns.Call(UnitIsDeadOrGhost, unit) ~= true then alive = alive + 1 end
-            end
-            finishFight(alive == 0, nil)
-        end
-    end)
-end)
+-- "Pepega deaths", first to die and last one standing: Modules/CommunityRaid.lua
 
 ---------------------------------------------------------------------------
 -- Consumables from the raid check
@@ -542,13 +525,15 @@ end)
 local lastConsum = 0
 function Community.RecordConsumables(rows)
     if not guildGroup() or GetTime() - lastConsum < 600 or ns.Database.Settings().modules.community == false then return end
+    -- raid night: only inside a raid instance
+    if not (ns.CommunityRaid and ns.CommunityRaid.InRaid()) then return end
     lastConsum = GetTime()
     local list = {}
     for _, r in ipairs(rows) do
         if r.scanned then list[r.key] = (r.flask and "F" or "") .. ("E"):rep(math.min(2, #r.elixirs)) .. (r.food and "S" or "") end
     end
     if not next(list) then return end
-    addEvent({ id = "cs:" .. (Names.Me() or "?") .. ":" .. ns.Now(), t = ns.Now(), k = "consum", d = { list = list } },
+    addEvent({ id = "cs:" .. (Names.Me() or "?") .. ":" .. ns.Now(), t = ns.Now(), k = "consum", ri = 1, d = { list = list } },
         Community.IsRecorder())
 end
 
@@ -589,10 +574,10 @@ local function lootLuck(since)
     end
     for _, e in ipairs(ns.Database.Guild().feed or {}) do
         if type(e) == "table" and (e.t or 0) >= since and type(e.d) == "table" then
-            if e.k == "boss" and e.d.r and type(e.d.g) == "table" then
+            if e.k == "boss" and e.d.r == 2 and type(e.d.g) == "table" then
                 local day = date("%Y%m%d", e.t)
                 for _, key in ipairs(e.d.g) do evening(key, day) end
-            elseif e.k == "loot" and (e.d.q or 0) >= 4 and e.d.ins and e.a then
+            elseif e.k == "loot" and (e.d.q or 0) >= 4 and e.d.r == 2 and e.a then
                 epics[e.a] = (epics[e.a] or 0) + 1
             end
         end
@@ -649,9 +634,9 @@ function Community.BadLuck(since)
     for _, e in ipairs(ns.Database.Guild().feed or {}) do
         if type(e) == "table" and (e.t or 0) >= (since or 0) and type(e.d) == "table" then
             local day = date("%Y%m%d", e.t)
-            if e.k == "boss" and e.d.r and type(e.d.g) == "table" then
+            if e.k == "boss" and e.d.r == 2 and type(e.d.g) == "table" then
                 for _, key in ipairs(e.d.g) do nights[key] = nights[key] or {}; nights[key][day] = true end
-            elseif e.k == "loot" and (e.d.q or 0) >= 4 and e.d.ins and e.a then
+            elseif e.k == "loot" and (e.d.q or 0) >= 4 and e.d.r == 2 and e.a then
                 epicDays[e.a] = epicDays[e.a] or {}; epicDays[e.a][day] = true
             end
         end
@@ -680,27 +665,44 @@ local function luckText(r)
         .. (r.evenings == 1 and L.BOARD_LUCK_NIGHT or L.BOARD_LUCK_NIGHTS):format(r.evenings)
 end
 
+-- Leaderboards in two groups: "raid" (raid night, only inside raid instances)
+-- and "life" (around Azeroth, each player records his own).
 function Community.Boards(days)
     local since = days and (ns.Now() - days * 86400) or 0
     local fail, mispull, death, flasks, noFood, checks = {}, {}, {}, {}, {}, {}
     local falls, repair, session, greet, afk, jumps, jumpNights = {}, {}, {}, {}, {}, {}, {}
+    local first2die, laststand, chug, chat, emote, notready, rollN, rollSum, snake = {}, {}, {}, {}, {}, {}, {}, {}, {}
+    local wdeath, wfall = {}, {}
+    local function inc(map, key, n) if key then map[key] = (map[key] or 0) + (n or 1) end end
     for _, e in ipairs(allEvents()) do
-        if e.t >= since then
-            if e.k == "failpull" and e.who then fail[e.who] = (fail[e.who] or 0) + 1
-            elseif e.k == "mispull" and e.who then mispull[e.who] = (mispull[e.who] or 0) + 1
-            elseif e.k == "death" and e.who then death[e.who] = (death[e.who] or 0) + 1
-            elseif e.k == "fall" and e.who then falls[e.who] = (falls[e.who] or 0) + 1
-            elseif e.k == "repair" and e.who and e.d then repair[e.who] = (repair[e.who] or 0) + (tonumber(e.d.c) or 0)
-            elseif e.k == "session" and e.who and e.d then
-                local len = tonumber(e.d.s) or 0
+        if e.t >= since and Community.Counts(e) then
+            local d = type(e.d) == "table" and e.d or {}
+            if e.k == "failpull" then inc(fail, e.who)
+            elseif e.k == "mispull" then inc(mispull, e.who)
+            elseif e.k == "death" then inc(death, e.who)
+            elseif e.k == "first2die" then inc(first2die, e.who)
+            elseif e.k == "laststand" then inc(laststand, e.who)
+            elseif e.k == "fall" then inc(falls, e.who)
+            elseif e.k == "repair" then inc(repair, e.who, tonumber(d.c) or 0)
+            elseif e.k == "session" and e.who then
+                local len = tonumber(d.s) or 0
                 if len > (session[e.who] or 0) then session[e.who] = len end
-            elseif e.k == "greet1" and e.who then greet[e.who] = (greet[e.who] or 0) + 1
-            elseif e.k == "afk" and e.who then afk[e.who] = (afk[e.who] or 0) + 1
-            elseif e.k == "jump" and e.who and e.d then
-                jumps[e.who] = (jumps[e.who] or 0) + (tonumber(e.d.n) or 0)
-                jumpNights[e.who] = (jumpNights[e.who] or 0) + 1
-            elseif e.k == "consum" and e.d and type(e.d.list) == "table" then
-                for key, code in pairs(e.d.list) do
+            elseif e.k == "greet1" then inc(greet, e.who)
+            elseif e.k == "afk" then inc(afk, e.who)
+            elseif e.k == "jump" and e.who then
+                inc(jumps, e.who, tonumber(d.n) or 0)
+                inc(jumpNights, e.who)
+            elseif e.k == "chug" then inc(chug, e.who, tonumber(d.n) or 0)
+            elseif e.k == "wdeath" then inc(wdeath, e.who, tonumber(d.n) or 0); inc(wfall, e.who, tonumber(d.e) or 0)
+            elseif e.k == "rnight" and e.who then
+                inc(chat, e.who, tonumber(d.chat) or 0)
+                inc(emote, e.who, tonumber(d.emote) or 0)
+                inc(notready, e.who, tonumber(d.nr) or 0)
+                inc(rollN, e.who, tonumber(d.rolls) or 0)
+                inc(rollSum, e.who, tonumber(d.rsum) or 0)
+                inc(snake, e.who, tonumber(d.r1) or 0)
+            elseif e.k == "consum" and type(d.list) == "table" then
+                for key, code in pairs(d.list) do
                     checks[key] = (checks[key] or 0) + 1
                     if tostring(code):find("F", 1, true) then flasks[key] = (flasks[key] or 0) + 1 end
                     if not tostring(code):find("S", 1, true) then noFood[key] = (noFood[key] or 0) + 1 end
@@ -710,13 +712,17 @@ function Community.Boards(days)
     end
     local function top(map, n, fmt)
         local list = {}
-        for key, v in pairs(map) do list[#list + 1] = { key = key, n = v, text = fmt and fmt(v) or nil } end
+        for key, v in pairs(map) do if v > 0 then list[#list + 1] = { key = key, n = v, text = fmt and fmt(v, key) or nil } end end
         table.sort(list, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.key < b.key end)
         while #list > (n or 5) do table.remove(list) end
         return list
     end
     local perNight = {}
     for key, n in pairs(jumps) do perNight[key] = math.floor(n / math.max(1, jumpNights[key] or 1) + 0.5) end
+    local rollAvg = {}
+    for key, n in pairs(rollN) do if n >= 5 then rollAvg[key] = math.floor((rollSum[key] or 0) / n + 0.5) end end
+    local flaskRate = {}
+    for key, n in pairs(flasks) do flaskRate[key] = n end
     local luck = lootLuck(since)
     local lucky, unlucky = {}, {}
     for _, r in ipairs(luck) do
@@ -735,32 +741,47 @@ function Community.Boards(days)
     local function days(v) return (v == 1 and L.BOARD_DAY or L.BOARD_DAYS):format(v) end
     while #lucky > 5 do table.remove(lucky) end
     while #unlucky > 5 do table.remove(unlucky) end
+    local function avg(v) return L.BOARD_AVG:format(v) end
+    local function ones(v) return L.BOARD_ONES:format(v) end
+    local function ofChecks(v, key) return ("%d/%d"):format(v, checks[key] or v) end
+    local R, W = "raid", "life"
     return {
-        { title = L.BOARD_FAILPULL, tip = L.BOARD_TIP_FAILPULL, icon = "swords", list = top(fail) },
-        { title = L.BOARD_MISPULL, tip = L.BOARD_TIP_MISPULL, icon = "move", list = top(mispull) },
-        { title = L.BOARD_DEATHS, tip = L.BOARD_TIP_DEATHS, icon = "x", list = top(death) },
-        { title = L.BOARD_LUCKY, tip = L.BOARD_TIP_LUCKY, icon = "gem", list = lucky },
-        { title = L.BOARD_UNLUCKY, tip = L.BOARD_TIP_UNLUCKY, icon = "scale", list = unlucky },
-        { title = L.BOARD_REPAIR, tip = L.BOARD_TIP_REPAIR, icon = "hammer", list = top(repair, 5, gold) },
-        { title = L.BOARD_MARATHON, tip = L.BOARD_TIP_MARATHON, icon = "timer", list = top(session, 5, hours) },
-        { title = L.BOARD_GREETER, tip = L.BOARD_TIP_GREETER, icon = "message-circle", list = top(greet) },
-        { title = L.BOARD_AFK, tip = L.BOARD_TIP_AFK, icon = "timer", list = top(afk) },
-        { title = L.BOARD_JUMPER, tip = L.BOARD_TIP_JUMPER, icon = "sparkles", list = top(perNight, 5, function(v) return L.BOARD_PER_NIGHT:format(v) end) },
-        { title = L.BOARD_BADLUCK, tip = L.BOARD_TIP_BADLUCK, icon = "scale", list = top(Community.BadLuck(since), 5, function(v) return (v == 1 and L.BOARD_NIGHT or L.BOARD_NIGHTS):format(v) end) },
-        { title = L.BOARD_GHOST, tip = L.BOARD_TIP_GHOST, icon = "x", list = stat("ghost", minutes) },
-        { title = L.BOARD_GUARD, tip = L.BOARD_TIP_GUARD, icon = "shield", list = stat("guard") },
-        { title = L.BOARD_SPIRIT, tip = L.BOARD_TIP_SPIRIT, icon = "sparkles", list = stat("spirit") },
-        { title = L.BOARD_TAXI, tip = L.BOARD_TIP_TAXI, icon = "arrow-left-right", list = stat("taxi") },
-        { title = L.BOARD_HEARTH, tip = L.BOARD_TIP_HEARTH, icon = "rotate-ccw", list = stat("hearth") },
-        { title = L.BOARD_JUNK, tip = L.BOARD_TIP_JUNK, icon = "scale", list = stat("junk", gold) },
-        { title = L.BOARD_SHOP, tip = L.BOARD_TIP_SHOP, icon = "gem", list = stat("shop", gold) },
-        { title = L.BOARD_AH, tip = L.BOARD_TIP_AH, icon = "hammer", list = stat("ah") },
-        { title = L.BOARD_MAIL, tip = L.BOARD_TIP_MAIL, icon = "scroll-text", list = stat("mail") },
-        { title = L.BOARD_KICK, tip = L.BOARD_TIP_KICK, icon = "swords", list = stat("kick") },
-        { title = L.BOARD_OWL, tip = L.BOARD_TIP_OWL, icon = "star", list = stat("owl", days) },
-        { title = L.BOARD_EARLY, tip = L.BOARD_TIP_EARLY, icon = "star-filled", list = stat("early", days) },
-        { title = L.BOARD_STREAK, tip = L.BOARD_TIP_STREAK, icon = "badge-check", list = stat("streak", days) },
-        { title = L.BOARD_QUOTES, tip = L.BOARD_TIP_QUOTES, icon = "newspaper", list = (function()
+        { group = R, title = L.BOARD_FAILPULL, tip = L.BOARD_TIP_FAILPULL, icon = "swords", list = top(fail) },
+        { group = R, title = L.BOARD_DEATHS, tip = L.BOARD_TIP_DEATHS, icon = "skull", list = top(death) },
+        { group = R, title = L.BOARD_FIRST2DIE, tip = L.BOARD_TIP_FIRST2DIE, icon = "skull", list = top(first2die) },
+        { group = R, title = L.BOARD_LASTSTAND, tip = L.BOARD_TIP_LASTSTAND, icon = "shield", list = top(laststand) },
+        { group = R, title = L.BOARD_MISPULL, tip = L.BOARD_TIP_MISPULL, icon = "move", list = top(mispull) },
+        { group = R, title = L.BOARD_JUMPER, tip = L.BOARD_TIP_JUMPER, icon = "sparkles", list = top(perNight, 5, function(v) return L.BOARD_PER_NIGHT:format(v) end) },
+        { group = R, title = L.BOARD_AFK, tip = L.BOARD_TIP_AFK, icon = "timer", list = top(afk) },
+        { group = R, title = L.BOARD_NOTREADY, tip = L.BOARD_TIP_NOTREADY, icon = "timer", list = top(notready) },
+        { group = R, title = L.BOARD_CHATTER, tip = L.BOARD_TIP_CHATTER, icon = "message-circle", list = top(chat) },
+        { group = R, title = L.BOARD_ROLLKING, tip = L.BOARD_TIP_ROLLKING, icon = "star", list = top(rollAvg, 5, avg) },
+        { group = R, title = L.BOARD_SNAKE, tip = L.BOARD_TIP_SNAKE, icon = "x", list = top(snake, 5, ones) },
+        { group = R, title = L.BOARD_EMOTE, tip = L.BOARD_TIP_EMOTE, icon = "megaphone", list = top(emote) },
+        { group = R, title = L.BOARD_CHUGGER, tip = L.BOARD_TIP_CHUGGER, icon = "zap", list = top(chug) },
+        { group = R, title = L.BOARD_FLASKS, tip = L.BOARD_TIP_FLASKS, icon = "sparkles", list = top(flaskRate, 5, ofChecks) },
+        { group = R, title = L.BOARD_NOFOOD, tip = L.BOARD_TIP_NOFOOD, icon = "x", list = top(noFood, 5, ofChecks) },
+        { group = R, title = L.BOARD_LUCKY, tip = L.BOARD_TIP_LUCKY, icon = "gem", list = lucky },
+        { group = R, title = L.BOARD_UNLUCKY, tip = L.BOARD_TIP_UNLUCKY, icon = "scale", list = unlucky },
+        { group = R, title = L.BOARD_BADLUCK, tip = L.BOARD_TIP_BADLUCK, icon = "scale", list = top(Community.BadLuck(since), 5, function(v) return (v == 1 and L.BOARD_NIGHT or L.BOARD_NIGHTS):format(v) end) },
+        { group = W, title = L.BOARD_MARATHON, tip = L.BOARD_TIP_MARATHON, icon = "timer", list = top(session, 5, hours) },
+        { group = W, title = L.BOARD_GREETER, tip = L.BOARD_TIP_GREETER, icon = "message-circle", list = top(greet) },
+        { group = W, title = L.BOARD_REPAIR, tip = L.BOARD_TIP_REPAIR, icon = "hammer", list = top(repair, 5, gold) },
+        { group = W, title = L.BOARD_WDEATH, tip = L.BOARD_TIP_WDEATH, icon = "skull", list = top(wdeath, 5, function(v, key)
+            local f = wfall[key] or 0
+            return f > 0 and L.BOARD_WDEATH_FALLS:format(v, f) or tostring(v)
+        end) },
+        { group = W, title = L.BOARD_GHOST, tip = L.BOARD_TIP_GHOST, icon = "x", list = stat("ghost", minutes) },
+        { group = W, title = L.BOARD_TAXI, tip = L.BOARD_TIP_TAXI, icon = "arrow-left-right", list = stat("taxi") },
+        { group = W, title = L.BOARD_HEARTH, tip = L.BOARD_TIP_HEARTH, icon = "rotate-ccw", list = stat("hearth") },
+        { group = W, title = L.BOARD_JUNK, tip = L.BOARD_TIP_JUNK, icon = "scale", list = stat("junk", gold) },
+        { group = W, title = L.BOARD_SHOP, tip = L.BOARD_TIP_SHOP, icon = "gem", list = stat("shop", gold) },
+        { group = W, title = L.BOARD_MAIL, tip = L.BOARD_TIP_MAIL, icon = "scroll-text", list = stat("mail") },
+        { group = W, title = L.BOARD_KICK, tip = L.BOARD_TIP_KICK, icon = "swords", list = stat("kick") },
+        { group = W, title = L.BOARD_OWL, tip = L.BOARD_TIP_OWL, icon = "star", list = stat("owl", days) },
+        { group = W, title = L.BOARD_EARLY, tip = L.BOARD_TIP_EARLY, icon = "star-filled", list = stat("early", days) },
+        { group = W, title = L.BOARD_STREAK, tip = L.BOARD_TIP_STREAK, icon = "badge-check", list = stat("streak", days) },
+        { group = W, title = L.BOARD_QUOTES, tip = L.BOARD_TIP_QUOTES, icon = "newspaper", list = (function()
             local likes = {}
             local posts = store().posts
             if Community.testPosts then
@@ -943,36 +964,135 @@ UI.AddPage("community", L.PAGE_COMMUNITY, 25, function(content, page)
         cards[i] = c
         return c
     end
-    local shown = 0
+    -- group headings ("Raid night" / "Around Azeroth") and the awards of the last raid night
+    local heads = {}
+    local function head(i)
+        local h = heads[i]
+        if h then return h end
+        h = CreateFrame("Frame", nil, body)
+        h:SetHeight(26)
+        h.diamond = UI.Fill(h, "bronze", "ARTWORK"); h.diamond:SetSize(6, 6)
+        if h.diamond.SetRotation then h.diamond:SetRotation(math.rad(45)) end
+        h.diamond:SetPoint("LEFT", 2, 0)
+        h.title = UI.Text(h, 12, "bronze", nil, nil, true); h.title:SetPoint("LEFT", h.diamond, "RIGHT", 8, 0)
+        h.hint = UI.Text(h, 11, "muted"); h.hint:SetPoint("LEFT", h.title, "RIGHT", 10, 0)
+        h.line = UI.Fill(h, "borderDim", "ARTWORK"); h.line:SetHeight(1)
+        h.line:SetPoint("LEFT", h.hint, "RIGHT", 10, 0); h.line:SetPoint("RIGHT", 0, 0)
+        heads[i] = h
+        return h
+    end
+    local awards = UI.Panel(body, "panel", "bronzeDim")
+    awards.stripe = UI.Fill(awards, "accent", "ARTWORK")
+    awards.stripe:SetPoint("TOPLEFT"); awards.stripe:SetPoint("BOTTOMLEFT"); awards.stripe:SetWidth(3)
+    awards.icon = UI.Icon(awards, "crown", 18, "accent"); awards.icon:SetPoint("TOPLEFT", 14, -12)
+    awards.kicker = UI.Text(awards, 11, "accent", nil, nil, true); awards.kicker:SetPoint("TOPLEFT", 42, -10)
+    awards.title = UI.Text(awards, 15, "text", nil, nil, true); awards.title:SetPoint("TOPLEFT", 42, -24)
+    awards.post = UI.Button(awards, L.AWARDS_POST, 140, 24, function() ns.CommunityRaid.PostAwards(awards.day) end, "share-2")
+    awards.post:SetPoint("TOPRIGHT", -10, -10)
+    awards.post.tip = { L.AWARDS_POST_TIP }
+    awards.tiles = {}
+    local AWARD_H = 96
+    local shown, list = 0, {}
     local function layoutCards()
         local w = scroll:GetWidth() or 900
         if w < 50 then w = boards:GetWidth() or 900 end
         w = w - 10
         local cols = math.max(1, math.floor((w + GAP) / (MIN_W + GAP)))
         local cw = (w - (cols - 1) * GAP) / cols
+        local y = 0
+        -- awards of the last raid night
+        if awards.count and awards.count > 0 then
+            awards:ClearAllPoints()
+            awards:SetPoint("TOPLEFT", 0, 0)
+            awards:SetSize(w, AWARD_H)
+            local n = awards.count
+            local per = math.max(1, math.min(n, math.floor((w - 24 + 8) / (150 + 8))))
+            local tw = (w - 24 - (per - 1) * 8) / per
+            for i, t in ipairs(awards.tiles) do
+                t:SetShown(i <= per and i <= n)
+                t:ClearAllPoints()
+                t:SetPoint("TOPLEFT", 12 + (i - 1) * (tw + 8), -48)
+                t:SetSize(tw, 38)
+                t.name:SetWidth(tw - 34); t.label:SetWidth(tw - 34)
+            end
+            awards:Show()
+            y = AWARD_H + 12
+        else
+            awards:Hide()
+        end
+        local group, col, hi = nil, 0, 0
         for i = 1, shown do
+            local b = list[i]
+            if b.group ~= group then
+                if col > 0 then y = y + CARD_H + GAP end
+                group, col = b.group, 0
+                hi = hi + 1
+                local h = head(hi)
+                h.title:SetText(ns.Upper(L["BOARD_GROUP_" .. (group or "life"):upper()]))
+                h.hint:SetText(L["BOARD_GROUP_" .. (group or "life"):upper() .. "_HINT"])
+                h:ClearAllPoints()
+                h:SetPoint("TOPLEFT", 0, -y)
+                h:SetWidth(w)
+                h:Show()
+                y = y + 30
+            end
             local c = cards[i]
             c:ClearAllPoints()
-            c:SetPoint("TOPLEFT", ((i - 1) % cols) * (cw + GAP), -math.floor((i - 1) / cols) * (CARD_H + GAP))
+            c:SetPoint("TOPLEFT", col * (cw + GAP), -y)
             c:SetSize(cw, CARD_H)
             for k = 1, LINES do
                 c.values[k]:SetWidth(90)
                 c.lines[k]:SetWidth(math.max(40, cw - 28 - 96))
             end
             c:Show()
+            col = col + 1
+            if col >= cols then col = 0; y = y + CARD_H + GAP end
         end
+        if col > 0 then y = y + CARD_H + GAP end
+        for i = hi + 1, #heads do heads[i]:Hide() end
         for i = shown + 1, #cards do cards[i]:Hide() end
-        body:SetSize(w, math.max(1, math.ceil(shown / cols) * (CARD_H + GAP)))
+        body:SetSize(w, math.max(1, y))
         if scroll.UpdateBar then scroll.UpdateBar() end
     end
     boards:SetScript("OnSizeChanged", layoutCards)
+    local function fillAwards()
+        local Raid = ns.CommunityRaid
+        local day = Raid and Raid.LastNight(7)
+        local items = day and Raid.Awards(day) or {}
+        awards.day, awards.count = day, #items
+        if #items == 0 then return end
+        local lr = ns.Database.Char().lastRaid
+        local y, m, d = day:match("^(%d%d%d%d)(%d%d)(%d%d)$")
+        local when = d and (d .. "." .. m .. ".") or day
+        local extra = ""
+        if lr and lr.day == day then
+            extra = " · " .. (lr.ins and (lr.ins .. " · ") or "") .. L.AWARDS_KILLS:format(lr.kills or 0, lr.wipes or 0)
+        end
+        awards.kicker:SetText(ns.Upper(L.AWARDS_LAST_NIGHT:format(when) .. extra))
+        awards.title:SetText(L.AWARDS_TITLE)
+        for i, a in ipairs(items) do
+            local t = awards.tiles[i]
+            if not t then
+                t = UI.Panel(awards, "input", "borderDim")
+                t.icon = UI.Icon(t, "star", 14, "bronze"); t.icon:SetPoint("LEFT", 10, 0)
+                t.label = UI.Text(t, 10, "muted"); t.label:SetPoint("TOPLEFT", 30, -5); t.label:SetWordWrap(false)
+                t.name = UI.Text(t, 12, "text"); t.name:SetPoint("TOPLEFT", 30, -19); t.name:SetWordWrap(false)
+                awards.tiles[i] = t
+            end
+            Theme.SetIcon(t.icon, a.def.icon)
+            t.label:SetText(L[a.def.title])
+            t.name:SetText(display(a.key) .. Theme.HexColor("muted", "  " .. a.text))
+        end
+        for i = #items + 1, #awards.tiles do awards.tiles[i]:Hide() end
+    end
     function boards.Refresh()
         periodSeg:Refresh()
         local p, n = Community.QuoteOfWeek()
         qotw.label:SetText(ns.Upper(L.QOTW_TITLE))
         qotw.text:SetText(p and Community.QuoteText(p, n) or Theme.HexColor("muted", L.QOTW_NONE))
         qotw.text:SetWidth(math.max(60, (boards:GetWidth() or 900) - 60 - (qotw.label:GetStringWidth() or 120)))
-        local list = Community.Boards(period > 0 and period or nil)
+        fillAwards()
+        list = Community.Boards(period > 0 and period or nil)
         shown = #list
         for i, b in ipairs(list) do
             local c = card(i)
@@ -1108,18 +1228,14 @@ UI.AddPage("community", L.PAGE_COMMUNITY, 25, function(content, page)
         local rows = {}
         -- running counters (daily stats, jumps) are no history entries
         for _, e in ipairs(store().events) do
-            if e.k ~= "daily" and e.k ~= "jump" then rows[#rows + 1] = { key = e.id, e = e } end
+            if not RUNNING[e.k] then rows[#rows + 1] = { key = e.id, e = e } end
         end
         histList:SetRows(rows)
     end
     tabs.history = history
 
-    -- badges: every badge with its holders (Modules/Badges.lua)
-    local badges = ns.Badges.BuildPage(holder)
-    badges:SetAllPoints()
-    tabs.badges = badges
-
-    local bar = UI.SubTabs(content, { { key = "boards", title = L.COMM_TAB_BOARDS }, { key = "badges", title = L.BADGES },
+    -- the badges are on the achievements page now (Personal › Achievements › Guild overview)
+    local bar = UI.SubTabs(content, { { key = "boards", title = L.COMM_TAB_BOARDS },
         { key = "pins", title = L.COMM_TAB_PINS }, { key = "history", title = L.COMM_TAB_HISTORY } }, function(key)
         for k, t in pairs(tabs) do t:SetShown(k == key) end
         tabs[key].Refresh()
@@ -1143,8 +1259,6 @@ UI.AddPage("community", L.PAGE_COMMUNITY, 25, function(content, page)
     pins.SearchApply = function(q) postList:ShowFirstHit(q) end
     history.SearchHits = function(q) history.Refresh(); return histList:SearchHits(q) end
     history.SearchApply = function(q) histList:ShowFirstHit(q) end
-    badges.SearchHits = function(q) badges.Refresh(); return badges.list:SearchHits(q) end
-    badges.SearchApply = function(q) badges.list:ShowFirstHit(q) end
     page.Search = function(text)
         page.query = text
         return UI.TabSearch(bar, tabs, text)

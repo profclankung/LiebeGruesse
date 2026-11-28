@@ -511,6 +511,8 @@ UI.AddPage("blessings", L.PAGE_BLESSINGS, 33, function(root, page)
     page.searchHint = L.BLESS_SEARCH
     page.Search = function(text) page.query = text; draw(); return page.hits end
     page.OnShow = function()
+        -- the bar was closed with its cross: opening the page brings it back
+        if ns.BlessingsBar and ns.BlessingsBar.Reopen then ns.BlessingsBar.Reopen() end
         draw()
         if not B.test and (B.IsPaladin() or IsInGroup()) and GetTime() - (B.lastScan or -99) > 3 then B.Scan() end
     end

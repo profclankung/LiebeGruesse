@@ -56,8 +56,7 @@ local function create()
     frame.title:SetPoint("LEFT", crest, "RIGHT", 8, 0)
     frame.timer = UI.Text(frame, 12, "muted", "RIGHT")
     frame.timer:SetPoint("TOPRIGHT", -40, -14)
-    local close = UI.Button(frame, "X", 22, 22, function() frame:Hide() end)
-    close:SetPoint("TOPRIGHT", -8, -8)
+    local close = UI.CloseX(frame, nil, 20)
     frame.rows = {}
     frame:SetScript("OnUpdate", function(self, elapsed)
         self.acc = (self.acc or 0) + elapsed

@@ -12,6 +12,9 @@ local MODULES = {
     { key = "professions", settings = true, icon = "scroll-text", page = "professions" },
     { key = "feed", settings = true, icon = "newspaper", page = "feed" },
     { key = "stats", icon = "badge-check", page = "stats" },
+    { key = "runs", settings = true, icon = "flag", page = "runs" },
+    { key = "achievements", settings = true, icon = "trophy", page = "achievements" },
+    { key = "bugs", icon = "bug" },
     { key = "greet", icon = "message-circle" },
 }
 

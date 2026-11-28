@@ -10,7 +10,7 @@ Theme.ICONS = "Interface\\AddOns\\LiebeGruesse\\Media\\Icons\\"
 -- Color roles. "gold" is the accent used for headings and highlights.
 Theme.ROLES = { "bg", "sidebar", "header", "panel", "row", "rowAlt", "input", "hover", "selected", "border", "borderDim",
     "gold", "accent", "accentDim", "text", "textDim", "muted", "good", "warn", "bad", "button", "buttonHot",
-    "bronze", "bronzeDim", "lapis" }
+    "bronze", "bronzeDim", "lapis", "tier1", "tier2", "tier3", "tier4", "tier5", "tier6", "tier7", "tier8" }
 
 local function hex(h, a)
     h = h:gsub("#", "")
@@ -46,6 +46,9 @@ local function build(baseKey, accentHex)
     c.good, c.warn, c.bad = hex("#5fd068"), hex("#ffb03a"), hex("#ed6c63")
     -- ornament colors taken from the logo (bronze frame, lapis center); same in every theme
     c.bronze, c.bronzeDim, c.lapis = hex("#b98a52"), hex("#6e5233"), hex("#4c86c9")
+    -- achievement tiers: bronze, silver, gold, platinum, emerald, diamond, master, challenger
+    c.tier1, c.tier2, c.tier3, c.tier4 = hex("#c08a52"), hex("#c6ced8"), hex("#f2c64e"), hex("#86e0d4")
+    c.tier5, c.tier6, c.tier7, c.tier8 = hex("#3fd27a"), hex("#8fd3ff"), hex("#b97dff"), hex("#ff5c8a")
     return c
 end
 

@@ -4,7 +4,9 @@ Addon for World of Warcraft: Forever (Interface 16001). English only.
 
 ## Installation
 
-Copy the folder `LiebeGruesse` into `World of Warcraft\_forever_\Interface\AddOns\` (or the AddOns folder of your client) and restart the game.
+The addon is on CurseForge (not public): https://www.curseforge.com/wow/addons/lgguild – install it **once** from the website (`/lg download` in game copies the link). Afterwards the CurseForge app finds it and keeps it up to date.
+
+Manually: copy the folder `LiebeGruesse` into `World of Warcraft\_forever_\Interface\AddOns\` (or the AddOns folder of your client) and restart the game.
 
 ## Features
 
@@ -19,7 +21,12 @@ Copy the folder `LiebeGruesse` into `World of Warcraft\_forever_\Interface\AddOn
 - **Window** – dark layout with a grouped sidebar (Guild, Raid tools, Forever, Settings), opacity and scale sliders in the header, "Move elements", minimise, "Reload UI".
 - **Appearance** – 7 colour themes (default "Ember"), every colour can be changed, font, font and window size. Fonts and textures of other addons are offered when they provide them.
 - **Enchant check** – including the neck; roster column with tick/cross, filter "Missing enchants", marker per item in the armory and a tooltip line. Which slots count is configurable.
-- **Versions** – who has which addon version (guild or current group).
+- **Versions** – who has which addon version (guild or current group); officers can remind members with an older version.
+- **Speedruns** (`/lg runs`) – dungeon and raid runs from the first pull to the end boss: on-screen timer with splits against your best or the guild record, deaths with an optional penalty, guild records shared after a plausibility check, boss pulls, wipes and first-try kills. Every record can be posted in guild/party chat or copied for Discord.
+- **Achievements** (`/lg achievements`) – dungeon, open world and raid achievements in eight tiers (bronze, silver, gold, platinum, emerald, diamond, master, challenger) with progress, counters and unlock dates; guild overview with a member ranking by tier points and the best holders of every achievement. Raid achievements count only in real raid instances.
+- **Community** – pin board, quote of the week and leaderboards: "Raid night" boards count only inside raid instances (first to die, last one standing, chatterbox, roll king …) and end with "Tonight's awards"; "Around Azeroth" boards count everyday life.
+- **Notification history** – every notification is kept; a movable bell shows the unread ones (`/lg log`).
+- **Bug reports** – errors of this addon can be reported with one click; they reach the guild master and officers (also later, when nobody was online) and land in an inbox in Guild admin.
 
 ## Changes
 

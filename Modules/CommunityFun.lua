@@ -1,5 +1,5 @@
 -- Community extras: things every player records about themselves and shares
--- with the guild – falls/drowning, repair bills, the longest online session –
+-- with the guild – deaths in the open world, repair bills, the longest online session –
 -- plus who writes a login greeting first. Leaderboards in Modules/Community.lua.
 local _, ns = ...
 local Community = ns.Community
@@ -11,12 +11,12 @@ local function on() return ns.Database.Settings().modules.community ~= false and
 local function me() return Names.Me() end
 
 ---------------------------------------------------------------------------
--- Falls, drowning, fatigue: how we died, without the combat log (the client
--- forbids addons to register COMBAT_LOG_EVENT_UNFILTERED).
+-- Pepega around Azeroth: own deaths in the open world (no instance), one
+-- running entry per player and day ("wd:<player>:<day>"). How we died comes
+-- without the combat log (the client forbids COMBAT_LOG_EVENT_UNFILTERED):
 --  * drowning / fatigue: the breath or fatigue mirror timer ran out
 --  * fall (incl. lava): we died out of combat – environmental damage never
 --    starts combat, monsters and players do
---  * city guards: we died in combat and the guard is our target
 ---------------------------------------------------------------------------
 local MIRROR_KINDS = { BREATH = "drown", EXHAUSTION = "fatigue" }
 local mirror = {}         -- timer name -> true while it runs
@@ -34,38 +34,43 @@ local function expiredMirror()
     end
 end
 
--- the guard we were fighting, read from our target
-local function guardTarget()
-    if not ns.Call(UnitExists, "target") or ns.Call(UnitIsPlayer, "target") then return end
-    local name = ns.Call(UnitName, "target")
-    if type(name) == "string" and ns.CommunityDaily and ns.CommunityDaily.IsGuard(name) then return name end
-end
-
--- how the player died: "drown"/"fatigue"/"fall", "guard" or nil
+-- how the player died: "drown"/"fatigue"/"fall" or nil (a monster or player)
 function Fun.DeathKind(inCombat)
     local kind = expiredMirror()
     if kind then return kind end
-    if inCombat then return guardTarget() and "guard" or nil end
+    if inCombat then return nil end
     return "fall"
 end
 
-function Fun.RecordDeath(kind)
+local function worldStore()
+    local char = ns.Database.Char()
+    local day = date("%Y%m%d")
+    if not char.wdeath or char.wdeath.day ~= day then char.wdeath = { day = day, n = 0, e = 0 } end
+    return char.wdeath
+end
+function Fun.ShareWorldDeaths()
+    local w = ns.Database.Char().wdeath
+    if not on() or not w or (w.n or 0) < 1 then return end
+    Community.AddEvent({ id = ("wd:%s:%s"):format(me(), w.day), t = ns.Now(), k = "wdeath", who = me(),
+        d = { day = w.day, n = w.n, e = w.e > 0 and w.e or nil } }, true)
+end
+function Fun.RecordWorldDeath(kind)
     if not on() then return end
-    local now = ns.Now()
-    Community.AddEvent({ id = ("fl:%s:%d"):format(me(), now), t = now, k = "fall", who = me(), d = { c = kind } }, true)
+    local w = worldStore()
+    w.n = math.min(500, w.n + 1)
+    if kind then w.e = math.min(w.n, w.e + 1) end
+    ns.Debounce("lg-wdeath", 30, Fun.ShareWorldDeaths)
 end
 
 ns.On("PLAYER_DEAD", function()
     -- combat ends with the death itself, so a fight that stopped a moment ago counts
     local fighting = ns.Call(UnitAffectingCombat, "player") == true or GetTime() - combatEndAt < 2
-    local inside, itype = ns.Call(IsInInstance)
     local kind = Fun.DeathKind(fighting)
     wipe(mirror)
-    if kind == "guard" then
-        if ns.CommunityDaily then ns.CommunityDaily.Add("guard") end
-    end
-    -- deaths by falling / drowning are no longer recorded (board removed, Ben 1.0.77)
+    if ns.Call(IsInInstance) == true then return end
+    Fun.RecordWorldDeath(kind)
 end)
+ns.On("LG_READY", function() ns.After(50, Fun.ShareWorldDeaths) end)
 
 ---------------------------------------------------------------------------
 -- Repair bill: what the repair cost drops by while a merchant is open
@@ -150,29 +155,30 @@ ns.On("CHAT_MSG_GUILD", function(_, text, sender)
 end)
 
 ---------------------------------------------------------------------------
--- AFK king: going AFK while in a raid group (at most once per 2 minutes)
+-- AFK king: going AFK inside a raid instance (at most once per 2 minutes)
 ---------------------------------------------------------------------------
 local wasAfk, lastAfk = false, 0
 function Fun.RecordAfk()
     if not on() or GetTime() - lastAfk < 120 then return end
     lastAfk = GetTime()
     local now = ns.Now()
-    Community.AddEvent({ id = ("af:%s:%d"):format(me(), now), t = now, k = "afk", who = me(), d = {} }, true)
+    Community.AddEvent({ id = ("af:%s:%d"):format(me(), now), t = now, k = "afk", who = me(), ri = 1, d = {} }, true)
 end
 ns.On("PLAYER_FLAGS_CHANGED", function(_, unit)
     if unit ~= "player" then return end
     local afk = ns.Call(UnitIsAFK, "player") == true
-    if afk and not wasAfk and IsInRaid() then Fun.RecordAfk() end
+    if afk and not wasAfk and ns.CommunityRaid and ns.CommunityRaid.Active() then Fun.RecordAfk() end
     wasAfk = afk
 end)
 
 ---------------------------------------------------------------------------
--- Jumper: jumps while in a raid group, one running entry per day ("raid night").
--- Counted in a post-hook (no taint); shared a minute after the last jump.
+-- Jumper: real jumps inside a raid instance, one running entry per raid night.
+-- Counted in a post-hook (no taint): no presses in mid-air, while swimming or
+-- flying, and at most one jump per 0.5 s; shared a minute after the last jump.
 ---------------------------------------------------------------------------
 local function jumpStore()
     local char = ns.Database.Char()
-    local day = date("%Y%m%d")
+    local day = ns.CommunityRaid.Day()
     if not char.jumps or char.jumps.day ~= day then char.jumps = { day = day, n = 0 } end
     return char.jumps
 end
@@ -182,11 +188,19 @@ function Fun.ShareJumps()
     lastJumpShare = GetTime()
     local j = ns.Database.Char().jumps
     if not on() or not j or (j.n or 0) < 1 then return end
-    Community.AddEvent({ id = ("jp:%s:%s"):format(me(), j.day), t = ns.Now(), k = "jump", who = me(), d = { n = j.n } }, true)
+    Community.AddEvent({ id = ("jp:%s:%s"):format(me(), j.day), t = ns.Now(), k = "jump", who = me(), ri = 1, d = { n = j.n } }, true)
 end
 
+local lastJump = 0
+function Fun.IsRealJump()
+    if ns.Call(IsFalling) == true or ns.Call(IsSwimming) == true or ns.Call(IsFlying) == true then return false end
+    if GetTime() - lastJump < 0.5 then return false end
+    lastJump = GetTime()
+    return true
+end
 function Fun.Jumped()
-    if not IsInRaid() or not on() then return end
+    if not on() or not ns.CommunityRaid.Active() then return end
+    if not Fun.IsRealJump() then return end
     local j = jumpStore()
     j.n = j.n + 1
     -- a minute after the last jump, and at least every 10 minutes while jumping on
@@ -219,8 +233,8 @@ function Fun.Test()
     for i, key in ipairs(keys) do
         for n = 1, 2 + i do
             add("daily", key, { day = ("202611%02d"):format(10 + n), login = 1, ghost = 300 * i, taxi = i + n, hearth = i,
-                junk = 20000 * i, shop = 90000 * n, ah = 3 * i, mail = i, kick = 4 * i, owl = (i + n) % 2, early = n % 2,
-                guard = i % 2, spirit = n % 2 })
+                junk = 20000 * i, shop = 90000 * n, mail = i, kick = 4 * i, owl = (i + n) % 2, early = n % 2 })
+            add("wdeath", key, { day = ("202611%02d"):format(10 + n), n = i + n, e = n % 2 })
         end
     end
     for i, key in ipairs(keys) do

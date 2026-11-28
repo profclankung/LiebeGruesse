@@ -1,10 +1,10 @@
 ## Interface: 16001
 ## Title: Liebe Grüße |cffe8c27aGuild Tools|r
-## Notes: Guild tools for Liebe Grüße: roster, inspect, feed, loot council, cooldown tracker and version check.
-## Notes-enUS: Guild tools for Liebe Grüße: roster, inspect, feed, loot council, cooldown tracker and version check.
+## Notes: Guild tools for Liebe Grüße: roster, inspect, feed, loot council, cooldowns, speedruns, achievements and version check.
+## Notes-enUS: Guild tools for Liebe Grüße: roster, inspect, feed, loot council, cooldowns, speedruns, achievements and version check.
 ## Author: Liebe Grüße
 ## X-Curse-Project-ID: 1828767
-## Version: 1.0.89
+## Version: 1.0.90
 ## SavedVariables: LiebeGruesseDB
 ## OptionalDeps: PriceGraphForever, Auctionator, TradeSkillMaster, LibSharedMedia-3.0
 ## IconTexture: Interface\AddOns\LiebeGruesse\Media\icon
@@ -34,6 +34,7 @@ UI\Toast.lua
 UI\Movers.lua
 UI\QuickBar.lua
 
+Modules\Bugs.lua
 Modules\Profile.lua
 Modules\Inspect.lua
 Modules\ArmoryTalents.lua
@@ -43,14 +44,18 @@ Modules\RosterPage.lua
 Modules\Tooltips.lua
 Modules\Feed.lua
 Modules\Notify.lua
+Modules\NotifyLog.lua
 Modules\Versions.lua
 Modules\QoL.lua
 Modules\Greet.lua
 Modules\RaidCheck.lua
+Modules\DeathWatch.lua
 Modules\Community.lua
+Modules\CommunityRaid.lua
 Modules\CommunityFun.lua
 Modules\CommunityDaily.lua
 Modules\Badges.lua
+Modules\Achievements.lua
 Modules\CoGuild.lua
 Modules\LootCouncil\Council.lua
 Modules\LootCouncil\ItemQueue.lua
@@ -58,6 +63,7 @@ Modules\LootCouncil\Popup.lua
 Modules\LootCouncil\CouncilWindow.lua
 Modules\LootCouncil\Page.lua
 Modules\LootCouncil\Companion.lua
+Modules\BugInbox.lua
 Modules\Admin.lua
 Modules\TradeTimers.lua
 Modules\Attune.lua
@@ -83,6 +89,11 @@ Modules\LifeData.lua
 Modules\LifeStats.lua
 Modules\LifeWindow.lua
 Modules\Stats.lua
+Modules\Runs\Data.lua
+Modules\Runs\Runs.lua
+Modules\Runs\Sync.lua
+Modules\Runs\Timer.lua
+Modules\Runs\Page.lua
 Modules\ModulesPage.lua
 Modules\Settings.lua
 Modules\Guide.lua

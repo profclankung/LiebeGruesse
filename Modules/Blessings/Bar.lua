@@ -641,8 +641,16 @@ local function create()
     smart:SetPoint("LEFT", quick, "RIGHT", 3, 0)
     smart.tip, smart.tipLines = L.BLESS_SMART, { L.BLESS_SMART_TIP_SHORT }
     frame.smart = smart
+    local closeX = UI.IconButton(head, "x", 22, function()
+        if inCombat() then ns.Print(L.BLESS_CLOSE_COMBAT); return end
+        Bar.closed = true
+        frame:Hide()
+        ns.Print(L.BLESS_CLOSED)
+    end)
+    closeX:SetPoint("RIGHT")
+    closeX.tip, closeX.tipLines = L.CLOSE, { L.BLESS_CLOSE_TIP }
     local lock = ns.Movers.LockButton("blessingsBar", frame, head, 22)
-    lock:SetPoint("RIGHT")   -- top right corner
+    lock:SetPoint("RIGHT", closeX, "LEFT", -3, 0)   -- top right corner, beside the cross
     local narrow = UI.IconButton(head, "arrow-left-right", 22, function()
         if inCombat() then ns.Print(L.BLESS_WHEEL_COMBAT); return end
         opt().compact = not compact()
@@ -707,6 +715,7 @@ local function shouldShow()
     if B.test then return true end
     if not B.Enabled() or not B.IsPaladin() then return false end
     if ns.Movers.active then return true end
+    if Bar.closed then return false end
     local o = opt()
     if not o.bar then return false end
     if not IsInGroup() then return o.solo end
@@ -1088,6 +1097,11 @@ function Bar.SetScale(v)
 end
 
 ns.On("LG_BLESSINGS", function() Bar.Update() end)
+-- closed with the cross: back after a zone change, when joining a group or from the page
+local function reopen() if Bar.closed then Bar.closed = nil; ns.After(1, Bar.Update) end end
+ns.On("PLAYER_ENTERING_WORLD", reopen)
+ns.On("GROUP_JOINED", reopen)
+function Bar.Reopen() reopen() end
 ns.On("LG_MOVERS", function() ns.AfterCombat("bless-bar", Bar.Update) end)
 ns.On("PLAYER_REGEN_ENABLED", function() ns.After(0.5, Bar.Update) end)
 ns.On("LG_READY", function()
