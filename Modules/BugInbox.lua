@@ -3,13 +3,16 @@
 -- players = one entry with a counter, the players and their notes), with
 -- status New / Seen / Solved. A solved bug that comes back in a newer version
 -- is new again. Stack copy: a box with the text selected (Ctrl+C).
+-- Entries are kept (SavedVariables, per guild) until an officer deletes them –
+-- nothing is removed automatically.
 local _, ns = ...
 local Inbox = {}
 ns.BugInbox = Inbox
 local UI, Theme, L, Names, Comm = ns.UI, ns.Theme, ns.L, ns.Names, ns.Comm
 
-local MAX_BUGS, MAX_NOTES = 100, 10
-local state = { filter = "new", selected = nil }
+local MAX_NOTES, MAX_IDS = 10, 60
+-- "all": a bug that was opened (seen) must not vanish from the default view
+local state = { filter = "all", selected = nil }
 Inbox.state = state
 
 local function store()
@@ -35,9 +38,12 @@ function Inbox.Receive(r, sender)
     local bugs = store()
     local b = bugs[sig]
     local v = clip(r.v, 12) or "?"
+    -- the same report (direct and relayed by an officer, or sent twice) counts once – also after a reload
+    local id = type(r.id) == "string" and r.id:sub(1, 80) or nil
+    if b and id and type(b.ids) == "table" and b.ids[id] then return b, true end
     if not b then
         b = { sig = sig, m = m, st = st, n = 0, players = {}, notes = {}, first = ns.Now(), status = "new",
-            where = ns.Bugs.Where(m, st) }
+            where = ns.Bugs.Where(m, st), ids = {} }
         bugs[sig] = b
         if ns.Bugs.Settings().inboxToast then
             UI.Toast(L.BUG_INBOX_KICKER, m, nil, { kicker = L.BUG_INBOX_KICKER, lines = { L.BUG_INBOX_FROM:format(Names.Display(sender)) },
@@ -45,6 +51,13 @@ function Inbox.Receive(r, sender)
         end
     elseif b.status == "solved" and b.solvedV and ns.CompareVersions(v, b.solvedV) > 0 then
         b.status = "new"
+    end
+    if id then
+        b.ids = type(b.ids) == "table" and b.ids or {}
+        b.idOrder = type(b.idOrder) == "table" and b.idOrder or {}
+        b.ids[id] = true
+        b.idOrder[#b.idOrder + 1] = id
+        while #b.idOrder > MAX_IDS do b.ids[table.remove(b.idOrder, 1)] = nil end
     end
     local n = math.max(1, math.min(10000, tonumber(r.n) or 1))
     b.n = b.n + n
@@ -58,13 +71,6 @@ function Inbox.Receive(r, sender)
     if note and note ~= "" then
         b.notes[#b.notes + 1] = { k = sender, x = note, t = ns.Now() }
         while #b.notes > MAX_NOTES do table.remove(b.notes, 1) end
-    end
-    -- the oldest solved ones go first when the inbox is full
-    local list = {}
-    for k, x in pairs(bugs) do list[#list + 1] = { k = k, solved = x.status == "solved", t = x.last or 0 } end
-    if #list > MAX_BUGS then
-        table.sort(list, function(a, c) if a.solved ~= c.solved then return a.solved end return a.t < c.t end)
-        for i = 1, #list - MAX_BUGS do bugs[list[i].k] = nil end
     end
     ns.Fire("LG_BUGS")
     return b
@@ -81,25 +87,35 @@ end
 function Inbox.Delete(sig) store()[sig] = nil; ns.Fire("LG_BUGS") end
 function Inbox.DeleteAll() wipe(store()); state.selected = nil; ns.Fire("LG_BUGS") end
 
--- reports: only to officers, only from guild members, at most 10 per player in 10 minutes
+-- reports: only to officers, only from guild members, at most 10 per player
+-- in 10 minutes (officers handing reports on are not limited). No receipt
+-- while guild or roster are not known yet (right after login): the sender
+-- tries again and nothing gets lost.
 local recent = {}
 Comm.Register("BR", function(data, sender, channel, raw)
-    if channel ~= "WHISPER" or not ns.Bugs.IsReceiver() or not ns.Guild.IsMember(sender) then return end
+    if channel ~= "WHISPER" or not ns.Database.GuildKey() or not ns.Bugs.IsReceiver() or not ns.Guild.IsMember(sender) then return end
     local r = type(data.r) == "table" and data.r
     if not r or type(r.id) ~= "string" or #r.id > 80 then return end
-    local now = GetTime()
-    local list = recent[sender] or {}
-    for i = #list, 1, -1 do if now - list[i] > 600 then table.remove(list, i) end end
-    if #list >= 10 then return end
-    list[#list + 1] = now
-    recent[sender] = list
-    -- the same report from a second try counts once
-    Inbox.ids = Inbox.ids or {}
-    if not Inbox.ids[r.id] then
-        Inbox.ids[r.id] = true
-        Inbox.Receive(r, sender)
+    local officer = ns.Guild.IsOfficer(sender)
+    -- relayed by an officer: counts for the player who reported it
+    local from = sender
+    if officer and type(r.from) == "string" and r.from ~= "" then
+        local key = Names.Key(r.from)
+        if key and (ns.Guild.IsMember(key) or Names.Same(key, Names.Me())) then from = key end
     end
+    if not officer then
+        local now = GetTime()
+        local list = recent[sender] or {}
+        for i = #list, 1, -1 do if now - list[i] > 600 then table.remove(list, i) end end
+        if #list >= 10 then return end
+        list[#list + 1] = now
+        recent[sender] = list
+    end
+    local b, dup = Inbox.Receive(r, from)
+    if not b then return end
     Comm.Send("BRA", { id = r.id }, "WHISPER", { target = raw, priority = "normal" })
+    -- a new report goes on to the other officers (who have it already confirm and skip it)
+    if not dup then ns.Bugs.Relay(r, from, sender) end
 end)
 
 function Inbox.Open()

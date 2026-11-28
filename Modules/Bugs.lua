@@ -4,15 +4,19 @@
 -- The report (error, stack, count, version, character, zone, group, optional
 -- note) goes to the guild master and officers as addon whisper. Nobody of them
 -- online: it waits in a queue (SavedVariables) and goes out when one logs in.
---   BR   report → officer (WHISPER, split into pieces by Comm)
---   BRA  "got it" → reporter (WHISPER): removed from the queue
+-- Every officer gets it ("officer" = the officer ranks set in Guild admin, and
+-- the guild master): a report stays queued until all of them confirmed it, and
+-- officers who got it hand it on to the others (relay) – every officer's inbox
+-- ends up with every report.
+--   BR   report → officer (WHISPER, split into pieces by Comm); r.from on relays
+--   BRA  "got it" → sender (WHISPER): out of the queue once every officer has it
 -- The officers' inbox: Modules/BugInbox.lua (Guild admin › Bug reports).
 local _, ns = ...
 local Bugs = ns.NewModule("bugs")
 ns.Bugs = Bugs
 local UI, Theme, L, Names, Comm = ns.UI, ns.Theme, ns.L, ns.Names, ns.Comm
 
-local MAX_STACK, MAX_MSG, MAX_QUEUE, MAX_SEEN = 2000, 300, 20, 40
+local MAX_STACK, MAX_MSG, MAX_QUEUE, MAX_SEEN = 2000, 300, 50, 40
 local RESEND = 180
 
 function Bugs.Settings()
@@ -281,15 +285,47 @@ function Bugs.IsReceiver(key)
     return IsInGuild() and ns.Guild.IsOfficer(key or Names.Me()) == true
 end
 
--- online officers (not us), names to whisper
+-- online officers (not us), names to whisper, and a parallel list of keys.
+-- "Officer" = every rank set as officer rank in Guild admin (and the guild master).
 function Bugs.Targets()
     local list = {}
     for key, g in pairs(ns.Guild.members or {}) do
-        if g.online and not Names.Same(key, Names.Me()) and ns.Guild.IsOfficer(key) then list[#list + 1] = g.name or Names.Display(key) end
+        if g.online and not Names.Same(key, Names.Me()) and ns.Guild.IsOfficer(key) then
+            list[#list + 1] = { key = key, name = g.name or Names.Display(key) }
+        end
     end
-    table.sort(list)
-    return list
+    table.sort(list, function(a, b) return a.name < b.name end)
+    local names, keys = {}, {}
+    for i, x in ipairs(list) do names[i], keys[i] = x.name, x.key end
+    return names, keys
 end
+
+-- every officer of the roster (online or not), without us and without `skip`
+local function allOfficers(skip)
+    local out = {}
+    for key in pairs(ns.Guild.members or {}) do
+        if not Names.Same(key, Names.Me()) and not (skip and Names.Same(key, skip)) and ns.Guild.IsOfficer(key) then
+            out[#out + 1] = key
+        end
+    end
+    return out
+end
+
+local function hasAck(r, key)
+    if type(r.acked) ~= "table" then return false end
+    for k in pairs(r.acked) do if Names.Same(k, key) then return true end end
+    return false
+end
+
+-- done when every officer of the roster confirmed it (unknown roster: never)
+local function delivered(r)
+    if not next(ns.Guild.members or {}) then return false end
+    for _, key in ipairs(allOfficers(r.from)) do
+        if not hasAck(r, key) then return false end
+    end
+    return true
+end
+Bugs.Delivered = delivered
 
 local function groupInfo()
     if IsInRaid() then return "raid " .. (GetNumGroupMembers() or 0) end
@@ -308,6 +344,33 @@ function Bugs.Build(sig, note)
         cb = ns.InCombat() and 1 or nil, note = note ~= "" and note or nil, t = ns.Now() }
 end
 
+-- a report waits in the queue until every officer has confirmed it (or 30 days)
+local MAX_AGE = 30 * 86400
+local function enqueue(r)
+    local q = Bugs.Settings().queue
+    for _, x in ipairs(q) do if x.id == r.id then return x end end
+    q[#q + 1] = r
+    while #q > MAX_QUEUE do table.remove(q, 1) end
+    return r
+end
+
+-- an officer who got a report (or filed his own) hands it on to the other
+-- officers: same id, so it counts once in every inbox; `from` is the reporter.
+-- `got` = the officer we received it from (has it already).
+function Bugs.Relay(r, fromKey, got)
+    if type(r) ~= "table" or type(r.id) ~= "string" then return end
+    local copy = {}
+    for k, v in pairs(r) do if k ~= "sentAt" and k ~= "acked" and k ~= "k" then copy[k] = v end end
+    copy.from = fromKey
+    copy.relay = true
+    copy.queuedAt = ns.Now()
+    copy.acked = {}
+    if got then copy.acked[got] = true end
+    if delivered(copy) then return end
+    enqueue(copy)
+    Bugs.Flush(true)
+end
+
 function Bugs.Submit(sig, note)
     if sig and Bugs.testSeen[sig] then
         ns.Print(L.TEST_TAG .. " " .. L.BUG_TEST_NOT_SENT)
@@ -319,48 +382,62 @@ function Bugs.Submit(sig, note)
     local e = Bugs.Settings().seen[sig]
     e.reported, e.reportedV = ns.Now(), ns.version
     if Bugs.button then Bugs.button:Hide() end
-    -- officers file their own reports directly
+    -- officers file their own reports directly – and hand them on to the other officers
     if Bugs.IsReceiver() and ns.BugInbox then
         ns.BugInbox.Receive(r, Names.Me())
         ns.Print(L.BUG_FILED_SELF)
+        Bugs.Relay(r, Names.Me())
         return true
     end
-    local q = Bugs.Settings().queue
-    q[#q + 1] = r
-    while #q > MAX_QUEUE do table.remove(q, 1) end
+    r.queuedAt = ns.Now()
+    enqueue(r)
     Bugs.Flush(true)
     if #Bugs.Targets() == 0 then ns.Print(L.BUG_QUEUED) end
     return true
 end
 
--- sends what waits in the queue to the online officers
+-- sends what waits in the queue to every online officer without receipt
 function Bugs.Flush(force)
     local q = Bugs.Settings().queue
     if #q == 0 or not IsInGuild() then return 0 end
-    local targets = Bugs.Targets()
-    if #targets == 0 then return 0 end
+    for i = #q, 1, -1 do
+        local t = q[i].queuedAt or q[i].t
+        if (type(t) == "number" and ns.Now() - t > MAX_AGE) or delivered(q[i]) then table.remove(q, i) end
+    end
+    local names, keys = Bugs.Targets()
+    if #names == 0 then return 0 end
     local sent = 0
     for _, r in ipairs(q) do
         if force or not r.sentAt or ns.Now() - r.sentAt > RESEND then
-            r.sentAt = ns.Now()
-            for i, name in ipairs(targets) do
-                if i > 3 then break end
-                Comm.Send("BR", { r = r }, "WHISPER", { target = name, priority = "bulk" })
+            local any = false
+            for i, name in ipairs(names) do
+                local key = keys[i]
+                if not hasAck(r, key) and not (r.from and Names.Same(key, r.from)) then
+                    local out = {}
+                    for k, v in pairs(r) do if k ~= "sentAt" and k ~= "acked" and k ~= "queuedAt" then out[k] = v end end
+                    Comm.Send("BR", { r = out }, "WHISPER", { target = name, priority = "bulk" })
+                    any = true
+                end
             end
-            sent = sent + 1
+            if any then r.sentAt = ns.Now(); sent = sent + 1 end
         end
     end
     return sent
 end
 
--- an officer got it: out of the queue
+-- receipt of an officer: he is not whispered again; out of the queue once
+-- every officer has it
 Comm.Register("BRA", function(data, sender, channel)
     if channel ~= "WHISPER" or type(data.id) ~= "string" or not ns.Guild.IsOfficer(sender) then return end
     local q = Bugs.Settings().queue
     for i = #q, 1, -1 do
-        if q[i].id == data.id then
-            table.remove(q, i)
-            ns.Print(L.BUG_DELIVERED:format(Names.Display(sender)))
+        local r = q[i]
+        if r.id == data.id then
+            r.acked = type(r.acked) == "table" and r.acked or {}
+            local first = next(r.acked) == nil
+            r.acked[sender] = true
+            if first and not r.relay then ns.Print(L.BUG_DELIVERED:format(Names.Display(sender))) end
+            if delivered(r) then table.remove(q, i) end
         end
     end
 end)

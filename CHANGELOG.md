@@ -2,6 +2,12 @@
 
 All notable changes to Liebe Grüße – Guild Tools. Newest first.
 
+## [1.0.91] – 2026-11-28
+
+- change(bugs): every officer gets every bug report – all ranks set as officer ranks in Guild admin, and the guild master
+- fix(bugs): a report waits until every officer confirmed it; officers hand new reports on to the others, so offline officers get them later too
+- fix(bugs): the same report from several officers counts once in the inbox
+
 ## [1.0.90] – 2026-11-28
 
 - feat(runs): new page Speedruns (Raid tools) – dungeon and raid runs from the first pull to the end boss, with splits, deaths and an optional death penalty
@@ -21,6 +27,9 @@ All notable changes to Liebe Grüße – Guild Tools. Newest first.
 - feat(bugs): errors of this addon are caught and grouped; a small "Report bug" button opens the report (stack, count, what you were doing)
 - feat(bugs): reports go to the guild master and officers; nobody online – they wait and go out when an officer logs in
 - feat(bugs): bug inbox for officers in Guild admin – new / seen / solved, stack to copy, delete all
+- fix(bugs): every report reaches the guild master – he is always whispered first, a report waits until he confirmed it, and officers who got it hand it on to him
+- fix(bugs): reports arriving right after login (guild not known yet) are no longer lost – the sender tries again
+- change(bugs): the bug inbox keeps every report until it is deleted by hand and opens with all reports (seen ones stay visible)
 - feat(notify): notification history with a movable bell and unread count – mark all read, clear
 - feat(versions): officers remind members with an older version – guild-wide (cooldown) or one player, at most once a day
 - feat(ui): copy boxes open with the text selected – press Ctrl+C
